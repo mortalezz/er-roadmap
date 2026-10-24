@@ -38,12 +38,25 @@ flowchart LR
     F --> G["Collapsible Route Legs\n& Inline PONR Banners"]
 ```
 
-### How Backward PONR Propagation Works
+### 1. Geographical Progression Weight Spine (`zone_order`)
+To sort checkpoints along **natural game progression** regardless of the order in which you queue items, [`compiler.py`](compiler.py) maps every region and landmark in the Lands Between and the Realm of Shadow to a canonical **geographical progression weight (`zone_order`)**:
+
+- **Base Game (`10`–`80`):**
+  - `10` Limgrave & Stormveil → `15` Weeping Peninsula → `20` Liurnia of the Lakes & Three Sisters → `25` Caelid & Dragonbarrow → `30` Nokron, Siofra & Underground → `40` Altus Plateau & Capital Outskirts → `45` Mt. Gelmir & Volcano Manor → `50` Leyndell & Subterranean Shunning-Grounds → `60` Mountaintops of the Giants → `70` Consecrated Snowfield & Mohgwyn Palace → `75` Elphael & Haligtree → `80` Crumbling Farum Azula & Ashen Capital.
+- **Shadow of the Erdtree (`100`–`160`):**
+  - `100` Gravesite Plain → `105` Cerulean Coast & Charo's Hidden Grave → `108` Belurat, Tower Settlement → `112` Castle Ensis → `114` Stone Coffin Fissure → `120` Scadu Altus → `125` Cathedral of Manus Metyr → `130` Shadow Keep & Hinterland → `140` Jagged Peak → `150` Ancient Ruins of Rauh → `152` Abyssal Woods → `160` Enir-Ilim.
+
+When you queue a mix of static regional pickups (e.g., a talisman in Caelid or a weapon in Scadu Altus) and multi-region NPC quests, the solver assigns each step its `zone_order` weight and interleaves them by `(zone_order, seq)` so you sweep each region once in natural progression order without needless backtracking.
+
+### 2. Backward PONR Ceiling Propagation
 For any multi-step quest chain $S = (s_1, s_2, \dots, s_k)$, [`compile_run_plan()`](compiler.py) iterates in **reverse** ($i = k \dots 1$):
 - It maintains a running lockout ceiling $C_i = \min(C_{i+1}, \text{pos}(\text{gate}(s_i)))$.
-- Each step's geographical zone ordinal $Z(s_i)$ is clamped to:
+- Each step's geographical zone weight $Z(s_i)$ is clamped to:
   $$\text{scheduled\_pos}(s_i) = \min\big(Z(s_i),\; C_i - 1\big)$$
 - This guarantees that an early prerequisite (even if its final reward is collected late in the game) is always scheduled in the route leg **before** the PONR barrier that would break the chain.
+
+### 3. Same-Run Mutual Exclusivity Collision Detection (`exclusive_group`)
+Certain rewards in Elden Ring and *Shadow of the Erdtree* are strictly mutually exclusive within a single playthrough (because they consume a single key item like *Seluvis's Potion*, *Heart of Bayle*, or require opposing Red/Gold summon sign choices). Whenever 2 or more items sharing an `exclusive_group` key are queued simultaneously, `compile_run_plan()` emits a conflict alert banner at the top of the workspace explaining why they collide and offering one-click removal buttons to resolve the collision for your current cycle.
 
 ---
 

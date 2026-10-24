@@ -143,7 +143,7 @@
 
       {% if not epochs %}
       <div class="rounded-lg border border-dashed border-zinc-800 p-8 text-center text-sm text-zinc-400">
-        Add items to your <strong>Current Run Roadmap</strong> above, or click <strong>📂 Import JSON</strong> to restore a saved run. The solver will unroll multi-region quest steps, interleave static pickups along the way, and place Point-of-No-Return stop barriers inline.
+        Add items to your <strong>Current Run Roadmap</strong> above, or click <strong>📂 Import JSON</strong> to restore a saved run. The solver unrolls multi-region quest chains, sorts checkpoints by geographical progression weight along natural game flow, detects same-run mutual exclusivity collisions, and places Point-of-No-Return stop barriers inline.
       </div>
       {% else %}
       <div class="space-y-6">
