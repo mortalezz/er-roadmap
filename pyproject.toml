@@ -1,7 +1,7 @@
 [project]
 name = "er-ngplus-compiler"
 version = "0.1.0"
-description = "Add your description here"
+description = "Demand-driven geographical route & Point-of-No-Return (PONR) DAG compiler for Elden Ring & Shadow of the Erdtree"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
