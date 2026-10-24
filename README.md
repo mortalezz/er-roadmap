@@ -124,9 +124,23 @@ Certain rewards are strictly mutually exclusive in a single playthrough (consumi
 ## Tech Stack & Architecture
 
 - **Backend:** [FastAPI](https://fastapi.tiangolo.com/) ([`main.py`](main.py)) + Jinja2 server-rendered templates ([`templates/`](templates/)).
-- **Frontend:** [HTMX `1.9.12`](https://htmx.org/) + Tailwind CSS. Zero client-side JS framework; mobile-first PWA with custom Great Rune vector icons ([`static/`](static/)).
-- **Database (`ngplus.db`):** Read-only SQLite 3 catalog with **FTS5** prefix typeahead search (`porter unicode61` tokenizer), prioritizing `[MISSABLE]` and curated multi-step chains.
-- **Stateless Multi-User Persistence:** User state (`er_order` and `er_steps`) is stored in signed HTTP-only cookies (30-day TTL) with one-click portable **💾 Export JSON** (`GET /export`) and **📂 Import JSON** (`POST /import`). SQLite is strictly read-only at runtime so concurrent cloud users never collide.
+- **Frontend:** [HTMX `1.9.12`](https://htmx.org/) + Tailwind CSS. Zero client-side JS framework; all mutations return server-rendered partial HTML with `HX-Trigger: refreshSearch` and `Vary: HX-Request, Cookie`.
+- **Database (`ngplus.db`):** Bundled, strictly **read-only** SQLite 3 catalog with **FTS5** prefix typeahead search (`porter unicode61` tokenizer), prioritizing `[MISSABLE]` and curated multi-step chains. Zero `SQLITE_BUSY` write locks across ephemeral cloud workers.
+- **Stateless Multi-User Persistence:** User state (`er_order` and `er_steps`) lives in compact `httponly` cookies (30-day TTL) alongside one-click portable **💾 Export JSON** (`GET /export`) and **📂 Import JSON** (`POST /import`).
+
+### Stateless Cookie Engineering (`v2_` `zlib` + `base64url`)
+
+Browsers silently drop any `Set-Cookie` header exceeding **4,096 bytes (4 KB)**. Worse, passing raw JSON (`json.dumps(...)`) into Starlette's `response.set_cookie()` triggers Python's `http.cookies.SimpleCookie` quoting, which octal-escapes every comma `,` into 4 bytes (`\054`) and every quote `"` into 2 bytes (`\"`)—inflating JSON cookies by ~23% on the wire.
+
+To prevent large completionist queues from ever hitting the 4 KB ceiling, [`main.py`](main.py) implements a compact **`v2_` cookie codec** (with automatic fallback for legacy `v1` JSON cookies):
+1. **ID-Only Deduplicated Lines:** Stores only `item_id` (or `item_id:1` when collected) and active `True` step keys (pruning `False` entries).
+2. **`zlib` (Level 9) + `base64url` Alphabet:** Compresses the newline-joined IDs and encodes them in unpadded URL-safe Base64 (`[A-Za-z0-9_-]`), containing **zero characters** that `SimpleCookie` quotes or escapes.
+3. **Zip-Bomb & Tamper Guards:** Decompression is bounded via `zlib.decompressobj().decompress(data, MAX_DECOMPRESSED_COOKIE_BYTES=65536)` with strict post-parse structural validation so malformed or manually edited cookies never trigger an unhandled `500` or memory spike.
+
+| Scenario | Legacy `v1` JSON (`SimpleCookie` Wire Size) | Compact `v2_` `zlib` + `base64url` Wire Size | Reduction |
+| :--- | :---: | :---: | :---: |
+| **9-Item Mixed Base + DLC Quest Run** | `619 B` (`er_order`) / `606 B` (`er_steps`) | **`183 B`** (`er_order`) / **`283 B`** (`er_steps`) | **-70%** |
+| **All 68 Missables Queued Simultaneously** | `4,568 B` (**> 4 KB dropped!**) / `4,027 B` | **`1,020 B`** (`er_order`) / **`1,527 B`** (`er_steps`) | **-78%** |
 
 ---
 
