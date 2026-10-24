@@ -1,0 +1,247 @@
+<!-- Top Progress Bar with Golden Grace Fill Line -->
+{% set pct = ((done_steps / total_steps * 100)|round|int) if total_steps > 0 else 0 %}
+<div class="relative overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/80 px-5 py-4 mb-6 shadow-md">
+  <div class="flex flex-wrap items-center justify-between gap-4">
+    <div class="flex flex-wrap items-center gap-5 sm:gap-6">
+      <div>
+        <span class="text-xs uppercase tracking-wider text-zinc-400 block">Targets Queued</span>
+        <span class="text-lg font-bold text-amber-400">
+          {{ collected_count }} / {{ order_items|length }} Collected
+        </span>
+      </div>
+      <div class="h-8 w-px bg-zinc-800"></div>
+      <div>
+        <span class="text-xs uppercase tracking-wider text-zinc-400 block">Route Checkpoints</span>
+        <span class="text-lg font-semibold text-emerald-400">
+          {{ done_steps }} / {{ total_steps }} Steps Done
+          {% if total_steps > 0 %}
+          <span class="ml-1 text-xs font-normal text-zinc-400">({{ pct }}%)</span>
+          {% endif %}
+        </span>
+      </div>
+      <div class="h-8 w-px bg-zinc-800"></div>
+      <div>
+        <span class="text-xs uppercase tracking-wider text-zinc-400 block">Route Legs</span>
+        <span class="text-lg font-semibold text-zinc-100">{{ epochs|length }}</span>
+      </div>
+    </div>
+
+    <div class="text-xs text-zinc-400">
+      Use <strong>💾 Export JSON</strong> above to save your checked progress anytime.
+    </div>
+  </div>
+
+  {% if total_steps > 0 %}
+  <div class="absolute bottom-0 left-0 right-0 h-1 bg-zinc-800/80">
+    <div
+      class="h-full bg-gradient-to-r from-amber-500 via-amber-400 to-emerald-400 transition-all duration-500 ease-out"
+      style="width: {{ pct }}%;"
+    ></div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Conflict Alert Banner (If Same-Run Mutual-Exclusivity Detected) -->
+{% if conflicts %}
+<div class="mb-6 rounded-xl border-2 border-red-500/80 bg-red-950/40 p-4">
+  <div class="flex items-center gap-2 text-red-300 font-bold text-sm uppercase tracking-wider mb-2">
+    <span>⚠️ Same-Run Mutual Exclusivity Collision Detected ({{ conflicts|length }})</span>
+  </div>
+  <div class="space-y-3">
+    {% for c in conflicts %}
+    <div class="rounded-lg bg-zinc-950/80 p-3 border border-red-800/60">
+      <p class="text-sm text-zinc-200 mb-2">{{ c.reason }}</p>
+      <div class="flex flex-wrap gap-2">
+        {% for item in c['items'] %}
+        <form hx-post="/order/remove" hx-target="#workspace" hx-swap="innerHTML" class="inline">
+          <input type="hidden" name="item_id" value="{{ item.item_id }}" />
+          <button
+            type="submit"
+            class="rounded border border-red-600/70 bg-red-900/40 hover:bg-red-800/60 px-2.5 py-1 text-xs text-red-200 transition"
+          >
+            Drop "{{ item.name }}" from Current Run ✕
+          </button>
+        </form>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- Main Grid: Left (Run Targets) | Right (Compiled Roadmap) -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6 w-full max-w-full">
+  <!-- Left Column: Current Run Targets (4 cols) -->
+  <div class="lg:col-span-4 space-y-6 min-w-0">
+    <div class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-sm font-bold uppercase tracking-wider text-amber-400">
+          Current Run Targets ({{ order_items|length }})
+        </h2>
+        {% if order_items %}
+        <form hx-post="/order/clear" hx-target="#workspace" hx-swap="innerHTML">
+          <button
+            type="submit"
+            class="rounded border border-zinc-700 bg-zinc-800 hover:bg-red-950 hover:border-red-700 hover:text-red-300 px-2 py-0.5 text-xs text-zinc-400 transition"
+          >
+            Clear All
+          </button>
+        </form>
+        {% endif %}
+      </div>
+
+      {% if not order_items %}
+      <p class="text-sm text-zinc-500">
+        Clean slate — no items queued yet. Search above or import a saved <code>.json</code> roadmap.
+      </p>
+      {% else %}
+      <div class="space-y-2">
+        {% for item in order_items %}
+        <div class="flex items-center justify-between gap-2 rounded-lg border {% if item.is_collected %}border-zinc-800/50 bg-zinc-950/40 opacity-65{% else %}border-zinc-800 bg-zinc-950/80 hover:border-zinc-700{% endif %} px-3 py-2.5 min-w-0 transition">
+          <form hx-post="/order/toggle" hx-target="#workspace" hx-swap="innerHTML" class="flex-1 min-w-0">
+            <input type="hidden" name="item_id" value="{{ item.item_id }}" />
+            <label class="flex items-center gap-3 min-w-0 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                {% if item.is_collected %}checked{% endif %}
+                onchange="this.form.requestSubmit()"
+                class="h-4 w-4 rounded border-zinc-600 bg-zinc-900 accent-amber-500 cursor-pointer shrink-0"
+              />
+              <div class="min-w-0">
+                <div class="text-sm font-medium break-words {% if item.is_collected %}line-through text-zinc-500{% else %}text-zinc-100{% endif %}">
+                  {{ item.name }}
+                </div>
+                <div class="text-xs text-zinc-400 break-words">
+                  {{ item.campaign }} • {{ item.category }}
+                </div>
+              </div>
+            </label>
+          </form>
+          <form hx-post="/order/remove" hx-target="#workspace" hx-swap="innerHTML" class="shrink-0">
+            <input type="hidden" name="item_id" value="{{ item.item_id }}" />
+            <button
+              type="submit"
+              class="rounded border border-red-800/60 bg-red-950/40 hover:bg-red-900/70 px-2 py-1 text-xs text-red-300 transition"
+            >
+              Remove
+            </button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Right Column: Geographically Sorted & PONR-Safe Work Order (8 cols) -->
+  <div class="lg:col-span-8 min-w-0">
+    <div class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+      <h2 class="text-base font-bold uppercase tracking-wider text-amber-400 mb-4">
+        Compiled Geographical Roadmap &amp; PONR Work Order
+      </h2>
+
+      {% if not epochs %}
+      <div class="rounded-lg border border-dashed border-zinc-800 p-8 text-center text-sm text-zinc-400">
+        Add items to your <strong>Current Run Roadmap</strong> above, or click <strong>📂 Import JSON</strong> to restore a saved run. The solver will unroll multi-region quest steps, interleave static pickups along the way, and place Point-of-No-Return stop barriers inline.
+      </div>
+      {% else %}
+      <div class="space-y-6">
+        {% for ep in epochs %}
+        <details {% if not ep.all_clear %}open{% endif %} class="group rounded-xl border {% if ep.all_clear %}border-emerald-800/50 bg-emerald-950/10{% else %}border-zinc-700 bg-zinc-950/80{% endif %} overflow-hidden transition">
+          <!-- Collapsible Route Leg Summary Header -->
+          <summary class="flex flex-wrap items-center justify-between gap-2 px-4 py-3.5 cursor-pointer select-none list-none hover:bg-zinc-900/50 transition">
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-zinc-400 transition-transform duration-200 group-open:rotate-90">▶</span>
+              <span class="text-xs font-bold uppercase tracking-wider {% if ep.all_clear %}text-emerald-400{% else %}text-zinc-300{% endif %}">
+                Route Leg {{ loop.index }} • {{ ep.gate.campaign }}
+              </span>
+            </div>
+            {% if ep.gate.gate_id != 'GATE_NONE' %}
+              {% if ep.all_clear %}
+              <span class="rounded bg-emerald-950 px-2 py-0.5 text-xs font-semibold text-emerald-300 border border-emerald-700/50">
+                ✓ PONR Cleared — Safe to Cross {{ ep.gate.title }}
+              </span>
+              {% else %}
+              <span class="rounded bg-red-950 px-2 py-0.5 text-xs font-semibold text-red-300 border border-red-700/50">
+                {{ ep.pending_count }} Critical Step(s) Before Gate
+              </span>
+              {% endif %}
+            {% else %}
+              {% if ep.all_clear %}
+              <span class="rounded bg-emerald-950 px-2 py-0.5 text-xs font-semibold text-emerald-300 border border-emerald-700/50">
+                ✓ All Sweep Steps Complete
+              </span>
+              {% else %}
+              <span class="rounded bg-zinc-800 px-2 py-0.5 text-xs font-semibold text-zinc-300">
+                {{ ep.pending_count }} Step(s) Remaining
+              </span>
+              {% endif %}
+            {% endif %}
+          </summary>
+
+          <!-- Route Leg Steps -->
+          <div class="px-4 pb-4 pt-1 space-y-3 border-t border-zinc-800/60">
+            {% for step in ep.steps %}
+            <form hx-post="/step/toggle" hx-target="#workspace" hx-swap="innerHTML" class="block">
+              <input type="hidden" name="step_key" value="{{ step.step_key }}" />
+              <label class="flex items-start gap-3 rounded-lg border {% if step.is_done %}border-zinc-800/50 bg-zinc-900/30 opacity-60{% else %}border-zinc-800/90 bg-zinc-900/70 hover:border-zinc-700{% endif %} p-3 min-w-0 cursor-pointer select-none transition">
+                <input
+                  type="checkbox"
+                  {% if step.is_done %}checked{% endif %}
+                  onchange="this.form.requestSubmit()"
+                  class="mt-0.5 h-4 w-4 rounded border-zinc-600 bg-zinc-950 accent-emerald-500 cursor-pointer shrink-0"
+                />
+                <div class="flex-1 min-w-0">
+                  <div class="flex flex-wrap items-center gap-2 mb-1">
+                    <span class="inline-block rounded bg-zinc-800 px-2 py-0.5 text-xs font-semibold text-emerald-300 border border-zinc-700 break-words">
+                      📍 {{ step.region_label }}
+                    </span>
+                    {% if step.is_gate_critical %}
+                    <span class="inline-block rounded bg-amber-950/90 px-2 py-0.5 text-xs font-medium text-amber-300 border border-amber-700/50">
+                      ⚡ PONR-Sensitive Prerequisite
+                    </span>
+                    {% else %}
+                    <span class="inline-block rounded bg-zinc-900 px-2 py-0.5 text-xs text-zinc-400 border border-zinc-800">
+                      On-The-Way Regional Sweep
+                    </span>
+                    {% endif %}
+                  </div>
+                  <p class="text-sm break-words {% if step.is_done %}line-through text-zinc-500{% else %}text-zinc-100{% endif %}">
+                    {{ step.text }}
+                  </p>
+                  <div class="mt-1.5 flex flex-wrap gap-1.5">
+                    {% for t in step.targets %}
+                    <span class="rounded bg-zinc-950 px-2 py-0.5 text-xs text-amber-300 border border-zinc-800 break-words">
+                      Target: {{ t.name }}
+                    </span>
+                    {% endfor %}
+                  </div>
+                </div>
+              </label>
+            </form>
+            {% endfor %}
+          </div>
+
+          <!-- Inline Hard Lockout Gate Banner -->
+          {% if ep.gate.gate_id != 'GATE_NONE' %}
+          <div class="border-t {% if ep.all_clear %}border-emerald-800/40 bg-emerald-950/30 text-emerald-300{% else %}border-red-800/70 bg-red-950/50 text-red-200{% endif %} px-4 py-3">
+            <div class="text-xs font-bold uppercase tracking-wider">
+              {% if ep.all_clear %}
+              🟢 SAFE TO CROSS POINT OF NO RETURN: {{ ep.gate.title }}
+              {% else %}
+              🛑 POINT OF NO RETURN — DO NOT TRIGGER YET: {{ ep.gate.title }}
+              {% endif %}
+            </div>
+            <div class="text-xs opacity-90 mt-0.5">
+              <strong>Trigger:</strong> {{ ep.gate.trigger_desc }} — {{ ep.gate.warning_desc }}
+            </div>
+          </div>
+          {% endif %}
+        </details>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>

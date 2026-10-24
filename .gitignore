@@ -1,0 +1,26 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+*$py.class
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# macOS & Editor metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+.idea/
+.vscode/
+
+# Cloud CLI, AI workspace rules & local secrets
+.fastapicloud/
+GEMINI.md
+.env
+.env.*

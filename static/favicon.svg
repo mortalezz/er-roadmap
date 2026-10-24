@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="bgGlow" cx="50%" cy="45%" r="60%">
+      <stop offset="0%" stop-color="#272015"/>
+      <stop offset="65%" stop-color="#09090b"/>
+      <stop offset="100%" stop-color="#050507"/>
+    </radialGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fde68a"/>
+      <stop offset="45%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#b45309"/>
+    </linearGradient>
+    <linearGradient id="goldBright" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#fef3c7"/>
+      <stop offset="50%" stop-color="#fbbf24"/>
+      <stop offset="100%" stop-color="#d97706"/>
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGlow)"/>
+  <rect x="14" y="14" width="484" height="484" rx="98" fill="none" stroke="url(#goldGrad)" stroke-width="6" opacity="0.35"/>
+
+  <!-- Upper Rune Arc -->
+  <path d="M 96 148 Q 256 248 416 148" fill="none" stroke="url(#goldBright)" stroke-width="20" stroke-linecap="round"/>
+  <!-- Lower Rune Arc -->
+  <path d="M 136 356 Q 256 420 376 356" fill="none" stroke="url(#goldGrad)" stroke-width="14" stroke-linecap="round" opacity="0.9"/>
+
+  <!-- Interlocking Elden Rings -->
+  <circle cx="256" cy="244" r="96" fill="none" stroke="url(#goldBright)" stroke-width="18"/>
+  <circle cx="204" cy="288" r="78" fill="none" stroke="url(#goldGrad)" stroke-width="14" opacity="0.92"/>
+  <circle cx="308" cy="288" r="78" fill="none" stroke="url(#goldGrad)" stroke-width="14" opacity="0.92"/>
+
+  <!-- Central Golden Lineage Spine & Compass Star -->
+  <line x1="256" y1="68" x2="256" y2="444" stroke="url(#goldBright)" stroke-width="20" stroke-linecap="round"/>
+  <polygon points="256,192 272,240 320,256 272,272 256,320 240,272 192,256 240,240" fill="#fef3c7"/>
+</svg>

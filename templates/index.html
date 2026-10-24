@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en" class="dark overflow-x-hidden">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>Elden Ring Current Run Roadmap</title>
+  <meta name="theme-color" content="#09090b" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="ER Roadmap" />
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png" />
+  <link rel="manifest" href="/static/site.webmanifest" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <style>
+    html, body, * {
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+    html::-webkit-scrollbar,
+    body::-webkit-scrollbar,
+    *::-webkit-scrollbar {
+      display: none;
+      width: 0;
+      height: 0;
+    }
+  </style>
+</head>
+<body class="bg-zinc-950 bg-[radial-gradient(ellipse_80%_50%_at_50%_-10%,rgba(245,158,11,0.10),transparent)] text-zinc-100 min-h-screen w-full max-w-full overflow-x-hidden font-sans antialiased">
+  <div class="max-w-7xl w-full mx-auto px-4 pt-6 pb-12 overflow-x-visible">
+    <!-- Header -->
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between border-b border-zinc-800/90 pb-6 mb-7 gap-4">
+      <div class="flex items-center gap-3.5">
+        <img
+          src="/static/icon-192.png"
+          alt="ER Roadmap Emblem"
+          class="h-11 w-11 rounded-xl border border-amber-500/40 shadow-[0_0_15px_rgba(245,158,11,0.18)] shrink-0"
+        />
+        <div>
+          <h1 class="text-2xl font-bold tracking-tight text-amber-400">
+            Elden Ring Current Run Roadmap
+          </h1>
+          <p class="text-sm text-zinc-400 mt-0.5">
+            Demand-driven geographical route &amp; Point-of-No-Return solver (Base Game + Shadow of the Erdtree)
+          </p>
+        </div>
+      </div>
+
+      <!-- Export / Import / Reset Controls -->
+      <div class="flex flex-wrap items-center gap-2.5">
+        <a
+          href="/export"
+          class="rounded-lg border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 active:scale-[0.98] px-3.5 py-2 text-xs font-semibold text-amber-300 transition flex items-center gap-1.5"
+        >
+          💾 Export JSON
+        </a>
+
+        <form
+          hx-post="/import"
+          hx-encoding="multipart/form-data"
+          hx-target="#workspace"
+          hx-swap="innerHTML"
+          class="inline"
+        >
+          <label class="cursor-pointer rounded-lg border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 active:scale-[0.98] px-3.5 py-2 text-xs font-semibold text-emerald-300 transition flex items-center gap-1.5">
+            📂 Import JSON
+            <input
+              type="file"
+              name="file"
+              accept=".json,application/json"
+              onchange="this.form.requestSubmit(); this.value='';"
+              class="hidden"
+            />
+          </label>
+        </form>
+
+        <form hx-post="/order/clear" hx-target="#workspace" hx-swap="innerHTML" class="inline">
+          <button
+            type="submit"
+            class="rounded-lg border border-red-900/60 bg-red-950/40 hover:bg-red-900/60 active:scale-[0.98] px-3.5 py-2 text-xs font-semibold text-red-300 transition"
+          >
+            Reset Slate
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Single Typeahead Search Bar (Relative container with floating overlay dropdown) -->
+    <div id="search-container" class="relative z-40 rounded-xl border border-zinc-800 bg-zinc-900/70 backdrop-blur-sm p-4 mb-6 shadow-lg">
+      <label for="order-search-input" class="block text-xs font-semibold uppercase tracking-wider text-amber-400 mb-1.5">
+        Add Desirables to Current Run Roadmap (Compiles Geographical Route &amp; PONR Gates)
+      </label>
+      <input
+        id="order-search-input"
+        type="text"
+        name="q"
+        placeholder="Type any Base Game or DLC item (e.g. Magic Scorpion, Bolt of Gransax, Florissax, Swift Slash, Euporia)..."
+        autocomplete="off"
+        autocorrect="off"
+        autocapitalize="off"
+        spellcheck="false"
+        hx-get="/search"
+        hx-trigger="input delay:150ms, focus"
+        hx-target="#order-search-results"
+        class="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3.5 py-2.5 text-sm text-zinc-100 placeholder-zinc-500 focus:border-amber-500 focus:ring-1 focus:ring-amber-500/40 focus:outline-none transition"
+      />
+      <div id="order-search-results" class="absolute left-4 right-4 top-full -mt-1 z-50"></div>
+    </div>
+
+    <!-- Live Roadmap Workspace -->
+    <div id="workspace">
+      {% include "partials/workspace.html" %}
+    </div>
+  </div>
+
+  <script>
+    function closeSearchDropdown(clearInput = true) {
+      const results = document.getElementById("order-search-results");
+      const input = document.getElementById("order-search-input");
+      if (results) results.innerHTML = "";
+      if (input) {
+        if (clearInput) input.value = "";
+        input.blur();
+      }
+    }
+
+    // Auto-close search dropdown when clicking/tapping outside #search-container (desktop & mobile)
+    document.addEventListener("pointerdown", function (e) {
+      const container = document.getElementById("search-container");
+      const results = document.getElementById("order-search-results");
+      if (container && results && results.innerHTML.trim() !== "" && !container.contains(e.target)) {
+        results.innerHTML = "";
+      }
+    });
+
+    // Auto-close search dropdown on Escape key
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") {
+        closeSearchDropdown(false);
+      }
+    });
+  </script>
+</body>
+</html>

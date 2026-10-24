@@ -1,0 +1,2728 @@
+import json
+import re
+import sqlite3
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+from typing import List, Dict, Any, Tuple
+
+from seed_db import DB_PATH, RULES_PATH, init_db, slugify
+
+FANAPI_BASE = "https://eldenring.fanapis.com/api"
+
+# ==============================================================================
+# TIER 1: CURATED GATES, MISSABLES, QUEST CHAINS & MUTUAL EXCLUSIVES
+# ==============================================================================
+FULL_QUEST_RULES: Dict[str, Any] = {
+    "gates": [
+        {
+            "gate_id": "GATE_B_ALTUS",
+            "order": 10,
+            "campaign": "Base Game",
+            "title": "Altus Plateau Grace / Radahn Festival",
+            "trigger": "Resting at any Altus Plateau Site of Grace or triggering the Redmane Castle Festival",
+            "warning": "Advances Alexander, Blaidd, Millicent, Corhyn, and Rya's placement. Progressing to Altus/Mountaintops before Raya Lucaria locks out Yura's academy bridge invasion (Ash of War: Raptor of the Mists)."
+        },
+        {
+            "gate_id": "GATE_B_FINGERSLAYER",
+            "order": 20,
+            "campaign": "Base Game",
+            "title": "Fingerslayer Blade Hand-In (Ranni)",
+            "trigger": "Giving the Fingerslayer Blade from Nokron to Ranni at Ranni's Rise",
+            "warning": "Seluvis dies immediately. Permanently locks out Magic Scorpion Charm and Seluvis's Puppets for this cycle."
+        },
+        {
+            "gate_id": "GATE_B_VOLCANO_MANOR",
+            "order": 25,
+            "campaign": "Base Game",
+            "title": "Entering Volcano Manor / Joining Tanith",
+            "trigger": "Resting inside Volcano Manor or pledging service to Tanith in Mt. Gelmir before completing Rya's Liurnia errand",
+            "warning": "Rya moves inside Volcano Manor without her Liurnia errand, permanently locking out Blackguard Boggart's Boiled Prawn & Boiled Crab vendor questline. Also permanently disables Recusant Henricus's invasion in Stormhill (Hammer Talisman)."
+        },
+        {
+            "gate_id": "GATE_B_RYKARD",
+            "order": 30,
+            "campaign": "Base Game",
+            "title": "Defeating Rykard, Lord of Blasphemy",
+            "trigger": "Killing Rykard in Volcano Manor",
+            "warning": "Volcano Manor disbands. Locks out unfinished assassination contracts (Bull-Goat Set, Raging Wolf Set, Taker's Cameo, Hoslow's Set, Serpentbone Blade) and Rya's quest."
+        },
+        {
+            "gate_id": "GATE_B_CASTLE_SOL",
+            "order": 35,
+            "campaign": "Base Game",
+            "title": "Haligtree Secret Medallion (Left) at Castle Sol",
+            "trigger": "Looting the Haligtree Secret Medallion (Left) on the Castle Sol rooftop in Mountaintops of the Giants",
+            "warning": "Latenna dies at Slumbering Wolf's Shack in Liurnia if you have not already spoken to Albus and recruited her, permanently locking out her Somber Ancient Dragon Smithing Stone."
+        },
+        {
+            "gate_id": "GATE_B_MALIKETH",
+            "order": 40,
+            "campaign": "Base Game",
+            "title": "Defeating Maliketh, the Black Blade",
+            "trigger": "Killing Maliketh in Crumbling Farum Azula",
+            "warning": "Royal Capital Leyndell turns to Ashen Capital. Locks out Bolt of Gransax, Gravel Stone Seal, Sanctified Whetblade, Barrier of Gold, Coded Sword, Black Bow, Lionel's Set, Nepheli/Gostoc setup, and Goldmask's quest."
+        },
+        {
+            "gate_id": "GATE_S_RUNEBREAK",
+            "order": 50,
+            "campaign": "Shadow of the Erdtree",
+            "title": "Miquella's Great Rune Breaks",
+            "trigger": "Approaching Shadow Keep main gate OR crossing north of Bonny Village",
+            "warning": "Locks out Moore's Black Syrup delivery to Thiollier, which permanently locks out Thiollier's Concoction, Dragonbolt of Florissax, and Florissax Spirit Ash."
+        },
+        {
+            "gate_id": "GATE_S_MESSMER",
+            "order": 60,
+            "campaign": "Shadow of the Erdtree",
+            "title": "Entering Messmer's Dark Chamber / Defeating Messmer",
+            "trigger": "Opening the door to Messmer the Impaler in Shadow Keep Specimen Storehouse",
+            "warning": "Locks out Leda vs. Hornsent (Lacerating Crossed-Tree), Leda vs. Ansbach (Retaliatory Crossed-Tree / Ansbach's Longbow), Freyja's Golden Lion Shield, and Hornsent Grandam's Watchful Spirit."
+        },
+        {
+            "gate_id": "GATE_S_ROMINA",
+            "order": 70,
+            "campaign": "Shadow of the Erdtree",
+            "title": "Burning the Sealing Tree (Church of the Bud)",
+            "trigger": "Burning the Sealing Tree after defeating Romina, Saint of the Bud",
+            "warning": "Shifts world to Enir-Ilim endgame. Locks out all incomplete DLC NPC questlines (Thiollier, St. Trina's Smile, Ansbach, Freyja, Moore, Dryleaf Dane duel)."
+        },
+        {
+            "gate_id": "GATE_NONE",
+            "order": 90,
+            "campaign": "Post-Gate / Open Sweep",
+            "title": "Remaining Route Pickups (No Further Lockout Gates)",
+            "trigger": "Safe to collect along the remaining regional path",
+            "warning": "All prior Points of No Return have been cleared or do not affect these steps."
+        }
+    ],
+    "items": [
+        {
+            "item_id": "boiled_crab_boggart",
+            "name": "Boiled Crab Vendor Unlock (Boggart)",
+            "category": "Vendor / Consumable",
+            "campaign": "Base Game",
+            "region": "Liurnia / Altus Plateau",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "boggart_liurnia_necklace",
+                    "gate_id": "GATE_B_VOLCANO_MANOR",
+                    "seq": 1,
+                    "zone_order": 20,
+                    "region_label": "Liurnia of the Lakes",
+                    "text": "Liurnia (Scenic Isle & Boilprawn Shack): Speak to Rya, buy Rya's Necklace from Boggart (1,000 Runes), return necklace to Rya, and buy Boiled Prawn from Boggart BEFORE entering Volcano Manor."
+                },
+                {
+                    "step_key": "boggart_altus_crab",
+                    "gate_id": "GATE_NONE",
+                    "seq": 2,
+                    "zone_order": 40,
+                    "region_label": "Altus Plateau & Capital Outskirts",
+                    "text": "Capital Outskirts (Outer Moat): Speak to Boggart to purchase Boiled Crab. (Unlock before freeing Dung Eater in Subterranean Shunning-Grounds)."
+                }
+            ]
+        },
+        {
+            "item_id": "daedicars_woe",
+            "name": "Daedicar's Woe",
+            "category": "Talisman",
+            "campaign": "Base Game",
+            "region": "Volcano Manor",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "boggart_liurnia_necklace",
+                    "gate_id": "GATE_B_VOLCANO_MANOR",
+                    "seq": 1,
+                    "zone_order": 20,
+                    "region_label": "Liurnia of the Lakes",
+                    "text": "Liurnia (Scenic Isle & Boilprawn Shack): Speak to Rya, buy Rya's Necklace from Boggart (1,000 Runes), return necklace to Rya, and buy Boiled Prawn from Boggart BEFORE entering Volcano Manor."
+                },
+                {
+                    "step_key": "rya_serpent_amnion",
+                    "gate_id": "GATE_B_RYKARD",
+                    "seq": 2,
+                    "zone_order": 45,
+                    "region_label": "Mt. Gelmir & Volcano Manor",
+                    "text": "Volcano Manor (Temple of Eiglay): Defeat Godskin Noble, loot Serpent's Amnion, deliver to Rya, spare her in the lava ruins (refuse Tonic of Forgetfulness), then defeat Rykard and loot Daedicar's Woe."
+                }
+            ]
+        },
+        {
+            "item_id": "magic_scorpion_charm",
+            "name": "Magic Scorpion Charm",
+            "category": "Talisman",
+            "campaign": "Base Game",
+            "region": "Liurnia - Three Sisters",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "ranni_start",
+                    "gate_id": "GATE_B_FINGERSLAYER",
+                    "seq": 1,
+                    "zone_order": 20,
+                    "region_label": "Liurnia of the Lakes",
+                    "text": "Liurnia (Three Sisters): Clear Caria Manor, enter Ranni's service at Ranni's Rise, then speak to Seluvis at Seluvis's Rise."
+                },
+                {
+                    "step_key": "seluvis_potion",
+                    "gate_id": "GATE_B_FINGERSLAYER",
+                    "seq": 2,
+                    "zone_order": 20,
+                    "region_label": "Liurnia of the Lakes",
+                    "text": "Liurnia (Three Sisters): Obtain Seluvis's Potion, inspect Seluvis's hidden puppet cellar, purchase a puppet with Starlight Shards, and exhaust Seluvis's dialogue."
+                },
+                {
+                    "step_key": "seluvis_amber_starlight",
+                    "gate_id": "GATE_B_FINGERSLAYER",
+                    "seq": 3,
+                    "zone_order": 40,
+                    "region_label": "Altus Plateau & Capital Outskirts",
+                    "text": "Altus Plateau (ravine north of Altus Highway Junction): Loot Amber Starlight and deliver to Seluvis at Three Sisters for Magic Scorpion Charm BEFORE giving Ranni the Fingerslayer Blade."
+                }
+            ]
+        },
+        {
+            "item_id": "dung_eater_puppet",
+            "name": "Dung Eater Puppet",
+            "category": "Spirit Ash",
+            "campaign": "Base Game",
+            "region": "Leyndell / Three Sisters",
+            "is_missable": True,
+            "exclusive_group": "EX_SELUVIS_POTION",
+            "exclusive_reason": "Uses the single Seluvis's Potion per cycle on Dung Eater. Mutually exclusive with Nepheli Loux Puppet (and blocks Dung Eater's Mending Rune of the Fell Curse).",
+            "steps": [
+                {
+                    "step_key": "seluvis_keep_potion",
+                    "gate_id": "GATE_B_FINGERSLAYER",
+                    "seq": 1,
+                    "zone_order": 20,
+                    "region_label": "Liurnia of the Lakes",
+                    "text": "Liurnia (Three Sisters): Obtain Seluvis's Potion from Seluvis's Rise. Do NOT give to Gideon or Nepheli."
+                },
+                {
+                    "step_key": "dungeater_sewer_potion",
+                    "gate_id": "GATE_B_FINGERSLAYER",
+                    "seq": 2,
+                    "zone_order": 50,
+                    "region_label": "Leyndell & Shunning-Grounds",
+                    "text": "Subterranean Shunning-Grounds (Sewer-Gaol): Defeat Dung Eater outer moat invasion, administer Seluvis's Potion to bound Dung Eater in cell, and purchase puppet from Seluvis BEFORE giving Ranni Fingerslayer Blade."
+                }
+            ]
+        },
+        {
+            "item_id": "nepheli_loux_puppet",
+            "name": "Nepheli Loux Puppet",
+            "category": "Spirit Ash",
+            "campaign": "Base Game",
+            "region": "Roundtable / Three Sisters",
+            "is_missable": True,
+            "exclusive_group": "EX_SELUVIS_POTION",
+            "exclusive_reason": "Uses Seluvis's Potion on Nepheli Loux. Mutually exclusive with Dung Eater Puppet and permanently locks out the 2x Ancient Dragon Smithing Stones from Nepheli & Gostoc at Stormveil.",
+            "steps": [
+                {
+                    "step_key": "nepheli_potion_feed",
+                    "gate_id": "GATE_B_FINGERSLAYER",
+                    "seq": 1,
+                    "zone_order": 20,
+                    "region_label": "Liurnia & Roundtable Hold",
+                    "text": "Roundtable Hold (Basement): Defeat Omenkiller in Albinauric Village, administer Seluvis's Potion to Nepheli downstairs BEFORE giving Ranni Fingerslayer Blade, then loot puppet from Pidia at Caria Manor."
+                }
+            ]
+        },
+        {
+            "item_id": "nepheli_ancient_dragon_stones",
+            "name": "Ancient Dragon Smithing Stone (2x — Nepheli & Gostoc)",
+            "category": "Upgrade Material",
+            "campaign": "Base Game",
+            "region": "Limgrave - Stormveil Throne Room",
+            "is_missable": True,
+            "exclusive_group": "EX_SELUVIS_POTION",
+            "exclusive_reason": "Giving Seluvis's Potion to Nepheli or killing Gostoc locks out these 2 stones.",
+            "steps": [
+                {
+                    "step_key": "kenneth_nepheli_setup",
+                    "gate_id": "GATE_B_MALIKETH",
+                    "seq": 1,
+                    "zone_order": 20,
+                    "region_label": "Limgrave & Liurnia",
+                    "text": "Limgrave & Roundtable Hold: Clear Fort Haight for Kenneth, spare Gostoc, defeat Omenkiller with Nepheli, and give her The Stormhawk King (Chapel of Anticipation) BEFORE defeating Maliketh."
+                },
+                {
+                    "step_key": "stormveil_throne_stones",
+                    "gate_id": "GATE_NONE",
+                    "seq": 2,
+                    "zone_order": 50,
+                    "region_label": "Leyndell & Stormveil Throne Room",
+                    "text": "Stormveil Castle (Throne Room): Defeat Morgott in Leyndell, rest at Godrick the Grafted grace until Nepheli, Kenneth, and Gostoc assemble; receive 1x stone from Nepheli and purchase 1x from Gostoc (20,000 Runes)."
+                }
+            ]
+        },
+        {
+            "item_id": "glintstone_kris_sellen",
+            "name": "Glintstone Kris, Shard Spiral & Witch's Crown (Side with Sellen)",
+            "category": "Weapon / Sorcery",
+            "campaign": "Base Game",
+            "region": "Liurnia - Raya Lucaria Grand Library",
+            "is_missable": True,
+            "exclusive_group": "EX_SELLEN_JERREN",
+            "exclusive_reason": "Assisting Sellen outside Raya Lucaria Grand Library locks out Jerren's Ancient Dragon Smithing Stone.",
+            "steps": [
+                {
+                    "step_key": "sellen_comet_azur_lusat",
+                    "gate_id": "GATE_NONE",
+                    "seq": 1,
+                    "zone_order": 45,
+                    "region_label": "Mt. Gelmir & Caelid",
+                    "text": "Mt. Gelmir & Caelid: Acquire Comet Azur from Primeval Sorcerer Azur (Hermit Village), show to Sellen (Waypoint Ruins), and locate Master Lusat (Sellia Hideaway)."
+                },
+                {
+                    "step_key": "sellen_primal_glintstone",
+                    "gate_id": "GATE_NONE",
+                    "seq": 2,
+                    "zone_order": 45,
+                    "region_label": "Weeping Peninsula & Three Sisters",
+                    "text": "Weeping Peninsula & Three Sisters: Defeat Radahn, retrieve Sellen's Primal Glintstone from Witchbane Ruins, and transplant into Sellen's puppet in Seluvis's hidden cellar."
+                },
+                {
+                    "step_key": "sellen_gold_sign_library",
+                    "gate_id": "GATE_NONE",
+                    "seq": 3,
+                    "zone_order": 45,
+                    "region_label": "Liurnia of the Lakes",
+                    "text": "Raya Lucaria Grand Library: Use the GOLD summon sign outside the library to assist Sellen against Jerren for Glintstone Kris, Shard Spiral, and Witch's Glintstone Crown."
+                }
+            ]
+        },
+        {
+            "item_id": "jerren_ancient_dragon_stone",
+            "name": "Ancient Dragon Smithing Stone (Side with Jerren vs. Sellen)",
+            "category": "Upgrade Material",
+            "campaign": "Base Game",
+            "region": "Liurnia - Raya Lucaria Grand Library",
+            "is_missable": True,
+            "exclusive_group": "EX_SELLEN_JERREN",
+            "exclusive_reason": "Invading Sellen with Jerren outside Raya Lucaria Grand Library locks out Glintstone Kris & Shard Spiral.",
+            "steps": [
+                {
+                    "step_key": "sellen_comet_azur_lusat",
+                    "gate_id": "GATE_NONE",
+                    "seq": 1,
+                    "zone_order": 45,
+                    "region_label": "Mt. Gelmir & Caelid",
+                    "text": "Mt. Gelmir & Caelid: Acquire Comet Azur from Primeval Sorcerer Azur (Hermit Village), show to Sellen (Waypoint Ruins), and locate Master Lusat (Sellia Hideaway)."
+                },
+                {
+                    "step_key": "sellen_primal_glintstone",
+                    "gate_id": "GATE_NONE",
+                    "seq": 2,
+                    "zone_order": 45,
+                    "region_label": "Weeping Peninsula & Three Sisters",
+                    "text": "Weeping Peninsula & Three Sisters: Defeat Radahn, retrieve Sellen's Primal Glintstone from Witchbane Ruins, and transplant into Sellen's puppet in Seluvis's hidden cellar."
+                },
+                {
+                    "step_key": "jerren_red_sign_library",
+                    "gate_id": "GATE_NONE",
+                    "seq": 3,
+                    "zone_order": 45,
+                    "region_label": "Liurnia of the Lakes",
+                    "text": "Raya Lucaria Grand Library: Use the RED summon sign outside the library to assist Jerren against Sellen; speak to Jerren outside for 1x Ancient Dragon Smithing Stone."
+                }
+            ]
+        },
+        {
+            "item_id": "bull_goat_set",
+            "name": "Bull-Goat Armor Set",
+            "category": "Armor",
+            "campaign": "Base Game",
+            "region": "Altus Plateau / Volcano Manor",
+            "is_missable": True,
+            "exclusive_group": "EX_PATCHES_SURVIVAL",
+            "exclusive_reason": "Requires sparing Patches in Murkwater Cave and completing his Volcano Manor contract before killing Rykard.",
+            "steps": [
+                {
+                    "step_key": "patches_volcano_manor",
+                    "gate_id": "GATE_B_RYKARD",
+                    "seq": 1,
+                    "zone_order": 45,
+                    "region_label": "Mt. Gelmir & Volcano Manor",
+                    "text": "Volcano Manor: Spare Patches in Murkwater Cave, join Volcano Manor, complete first assassination contract (Old Knight Istvan in Limgrave), and speak to Patches in the manor corridor for Letter to Patches."
+                },
+                {
+                    "step_key": "tragoth_invasion",
+                    "gate_id": "GATE_B_RYKARD",
+                    "seq": 2,
+                    "zone_order": 45,
+                    "region_label": "Ruin-Strewn Precipice & Volcano Manor",
+                    "text": "Ruin-Strewn Precipice Overlook: Use the RED summon sign in Magma Wyrm Makar's arena to invade Great Horned Tragoth for Bull-Goat Set BEFORE defeating Rykard."
+                }
+            ]
+        },
+        {
+            "item_id": "raging_wolf_set",
+            "name": "Raging Wolf Armor Set",
+            "category": "Armor",
+            "campaign": "Base Game",
+            "region": "Leyndell, Royal Capital",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "volcano_contracts_1_2",
+                    "gate_id": "GATE_B_RYKARD",
+                    "seq": 1,
+                    "zone_order": 45,
+                    "region_label": "Mt. Gelmir & Volcano Manor",
+                    "text": "Volcano Manor: Complete first two assassination contracts (Old Knight Istvan in Limgrave, Rileigh the Idle in Altus) to receive Serpentbone Blade and the Red Letter."
+                },
+                {
+                    "step_key": "bernahl_leyndell_invasion",
+                    "gate_id": "GATE_B_RYKARD",
+                    "seq": 2,
+                    "zone_order": 50,
+                    "region_label": "Leyndell & Shunning-Grounds",
+                    "text": "Leyndell (Fortified Manor, 1st Floor): Use the RED summon sign with Bernahl to invade Vargram the Raging Wolf and Errant Sorcerer Wilhelm for Raging Wolf Set BEFORE defeating Rykard or Maliketh."
+                }
+            ]
+        },
+        {
+            "item_id": "takers_cameo_hoslow",
+            "name": "Taker's Cameo, Hoslow's Set & Serpentbone Blade",
+            "category": "Talisman / Weapon",
+            "campaign": "Base Game",
+            "region": "Mountaintops of the Giants / Volcano Manor",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "volcano_contracts_1_2",
+                    "gate_id": "GATE_B_RYKARD",
+                    "seq": 1,
+                    "zone_order": 45,
+                    "region_label": "Mt. Gelmir & Volcano Manor",
+                    "text": "Volcano Manor: Complete first two assassination contracts (Old Knight Istvan in Limgrave, Rileigh the Idle in Altus) to receive Serpentbone Blade and the Red Letter."
+                },
+                {
+                    "step_key": "juno_hoslow_mountaintops",
+                    "gate_id": "GATE_B_RYKARD",
+                    "seq": 2,
+                    "zone_order": 60,
+                    "region_label": "Mountaintops of the Giants",
+                    "text": "Mountaintops of the Giants (east of Shack of the Lofty): Invade Juno Hoslow via RED sign for Hoslow's Set and Hoslow's Petal Whip, then collect Taker's Cameo from Tanith at Volcano Manor BEFORE defeating Rykard."
+                }
+            ]
+        },
+        {
+            "item_id": "bolt_of_gransax",
+            "name": "Bolt of Gransax",
+            "category": "Weapon",
+            "campaign": "Base Game",
+            "region": "Leyndell, Royal Capital",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "leyndell_gransax_spear",
+                    "gate_id": "GATE_B_MALIKETH",
+                    "seq": 1,
+                    "zone_order": 50,
+                    "region_label": "Leyndell & Shunning-Grounds",
+                    "text": "Leyndell (Erdtree Sanctuary): Defeat Godfrey (Golden Shade), ride west elevator down, jump onto the giant petrified spear, and loot Bolt of Gransax BEFORE defeating Maliketh."
+                }
+            ]
+        },
+        {
+            "item_id": "gravel_stone_seal",
+            "name": "Gravel Stone Seal",
+            "category": "Sacred Seal",
+            "campaign": "Base Game",
+            "region": "Leyndell, Royal Capital",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "leyndell_gravel_seal",
+                    "gate_id": "GATE_B_MALIKETH",
+                    "seq": 1,
+                    "zone_order": 50,
+                    "region_label": "Leyndell & Shunning-Grounds",
+                    "text": "Leyndell (West Capital Rampart / Fortified Manor courtyard): Kill the spear-wielding Leyndell Knight by the petrified dragon wing for Gravel Stone Seal BEFORE defeating Maliketh."
+                }
+            ]
+        },
+        {
+            "item_id": "sanctified_whetblade_coded_sword",
+            "name": "Sanctified Whetblade & Coded Sword",
+            "category": "Key Item / Weapon",
+            "campaign": "Base Game",
+            "region": "Leyndell, Royal Capital",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "fortified_manor_loot",
+                    "gate_id": "GATE_B_MALIKETH",
+                    "seq": 1,
+                    "zone_order": 50,
+                    "region_label": "Leyndell & Shunning-Grounds",
+                    "text": "Leyndell (Fortified Manor upper floor): Climb stable roofs to enter the second floor; loot Sanctified Whetblade in the anvil room and Coded Sword on the throne BEFORE defeating Maliketh."
+                }
+            ]
+        },
+        {
+            "item_id": "barrier_of_gold",
+            "name": "Barrier of Gold",
+            "category": "Incantation",
+            "campaign": "Base Game",
+            "region": "Leyndell, Royal Capital",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "leyndell_barrier_scarab",
+                    "gate_id": "GATE_B_MALIKETH",
+                    "seq": 1,
+                    "zone_order": 50,
+                    "region_label": "Leyndell & Shunning-Grounds",
+                    "text": "Leyndell (Erdtree Sanctuary): Ride west elevator down, head north down stairs, and kill the invisible Teardrop Scarab on the terrace for Barrier of Gold BEFORE defeating Maliketh."
+                }
+            ]
+        },
+        {
+            "item_id": "goldmask_mending_rune",
+            "name": "Goldmask's Set & Mending Rune of Perfect Order",
+            "category": "Armor / Key Item",
+            "campaign": "Base Game",
+            "region": "Leyndell, Royal Capital",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "corhyn_goldmask_altus",
+                    "gate_id": "GATE_B_MALIKETH",
+                    "seq": 1,
+                    "zone_order": 40,
+                    "region_label": "Altus Plateau & Capital Outskirts",
+                    "text": "Altus Plateau (Forest-Spanning Great Bridge): Find Goldmask on the north span, inform Brother Corhyn north of Altus Highway Junction, then exhaust dialogue with both at the bridge."
+                },
+                {
+                    "step_key": "goldmask_leyndell_regression",
+                    "gate_id": "GATE_B_MALIKETH",
+                    "seq": 2,
+                    "zone_order": 50,
+                    "region_label": "Leyndell & Shunning-Grounds",
+                    "text": "Leyndell (Erdtree Sanctuary & Colosseum): Loot Golden Order Principia, cast Law of Regression (37 INT) at the Radagon statue, and report the secret to Goldmask at the colosseum cliff."
+                },
+                {
+                    "step_key": "goldmask_mountaintops_stargazer",
+                    "gate_id": "GATE_B_MALIKETH",
+                    "seq": 3,
+                    "zone_order": 60,
+                    "region_label": "Mountaintops of the Giants",
+                    "text": "Mountaintops of the Giants (bridge south of Stargazer's Ruins): Exhaust dialogue with Goldmask and Corhyn BEFORE defeating Maliketh."
+                },
+                {
+                    "step_key": "goldmask_ashen_capital_rune",
+                    "gate_id": "GATE_NONE",
+                    "seq": 4,
+                    "zone_order": 80,
+                    "region_label": "Leyndell, Ashen Capital",
+                    "text": "Leyndell, Ashen Capital (cliff base below colosseum): Loot Mending Rune of Perfect Order from Goldmask's corpse; reload area to collect Goldmask's Set."
+                }
+            ]
+        },
+        {
+            "item_id": "millicents_prosthesis",
+            "name": "Millicent's Prosthesis",
+            "category": "Talisman",
+            "campaign": "Base Game",
+            "region": "Altus Plateau / Elphael",
+            "is_missable": True,
+            "exclusive_group": "EX_MILLICENT_FINALE",
+            "exclusive_reason": "Requires either killing Millicent at Windmill Heights or invading her via Red Sign in Elphael. Mutually exclusive with Rotten Winged Sword Insignia in the same NG+ cycle.",
+            "steps": [
+                {
+                    "step_key": "millicent_needle",
+                    "gate_id": "GATE_NONE",
+                    "seq": 1,
+                    "zone_order": 25,
+                    "region_label": "Caelid & Dragonbarrow",
+                    "text": "Caelid (Swamp of Aeonia & Church of the Plague): Defeat Commander O'Neil, deliver Unalloyed Gold Needle to Gowry, then cure Millicent at Church of the Plague."
+                },
+                {
+                    "step_key": "millicent_valkyrie_prosthesis",
+                    "gate_id": "GATE_NONE",
+                    "seq": 2,
+                    "zone_order": 40,
+                    "region_label": "Altus Plateau & Capital Outskirts",
+                    "text": "Altus Plateau (Shaded Castle & Dominula): Retrieve Valkyrie's Prosthesis from Shaded Castle, deliver to Millicent at Erdtree-Gazing Hill, and defeat Godskin Apostle at Windmill Heights."
+                },
+                {
+                    "step_key": "millicent_kill_or_betray",
+                    "gate_id": "GATE_NONE",
+                    "seq": 3,
+                    "zone_order": 40,
+                    "region_label": "Altus Plateau & Capital Outskirts",
+                    "text": "Windmill Heights or Elphael: Kill Millicent at Windmill Heights (fastest) OR challenge her via RED summon sign at Elphael Drainage Channel for Millicent's Prosthesis."
+                }
+            ]
+        },
+        {
+            "item_id": "rotten_winged_sword_insignia",
+            "name": "Rotten Winged Sword Insignia, Miquella's Needle & Somber Ancient Dragon Smithing Stone",
+            "category": "Talisman / Upgrade Material",
+            "campaign": "Base Game",
+            "region": "Elphael, Brace of the Haligtree",
+            "is_missable": True,
+            "exclusive_group": "EX_MILLICENT_FINALE",
+            "exclusive_reason": "Assisting Millicent via the Gold Sign in Elphael locks out Millicent's Prosthesis in the same cycle.",
+            "steps": [
+                {
+                    "step_key": "millicent_needle",
+                    "gate_id": "GATE_NONE",
+                    "seq": 1,
+                    "zone_order": 25,
+                    "region_label": "Caelid & Dragonbarrow",
+                    "text": "Caelid (Swamp of Aeonia & Church of the Plague): Defeat Commander O'Neil, deliver Unalloyed Gold Needle to Gowry, then cure Millicent at Church of the Plague."
+                },
+                {
+                    "step_key": "millicent_valkyrie_prosthesis",
+                    "gate_id": "GATE_NONE",
+                    "seq": 2,
+                    "zone_order": 40,
+                    "region_label": "Altus Plateau & Capital Outskirts",
+                    "text": "Altus Plateau (Shaded Castle & Dominula): Retrieve Valkyrie's Prosthesis from Shaded Castle, deliver to Millicent at Erdtree-Gazing Hill, and defeat Godskin Apostle at Windmill Heights."
+                },
+                {
+                    "step_key": "millicent_mountaintops",
+                    "gate_id": "GATE_NONE",
+                    "seq": 3,
+                    "zone_order": 60,
+                    "region_label": "Mountaintops of the Giants",
+                    "text": "Mountaintops of the Giants (Ancient Snow Valley Ruins): Exhaust Millicent's dialogue at the site of grace."
+                },
+                {
+                    "step_key": "millicent_elphael_assist",
+                    "gate_id": "GATE_NONE",
+                    "seq": 4,
+                    "zone_order": 75,
+                    "region_label": "Elphael & Haligtree",
+                    "text": "Elphael (Drainage Channel): Defeat Ulcerated Tree Spirit in the rot pool, use the GOLD summon sign to assist Millicent against her sisters for Rotten Winged Sword Insignia and Unalloyed Gold Needle."
+                },
+                {
+                    "step_key": "millicent_malenia_bloom_stone",
+                    "gate_id": "GATE_NONE",
+                    "seq": 5,
+                    "zone_order": 75,
+                    "region_label": "Elphael & Haligtree",
+                    "text": "Elphael (Haligtree Roots): Defeat Malenia, reload arena, and insert Unalloyed Gold Needle into the Scarlet Aeonia flower for Miquella's Needle and 1x Somber Ancient Dragon Smithing Stone."
+                }
+            ]
+        },
+        {
+            "item_id": "warrior_jar_shard",
+            "name": "Warrior Jar Shard (10% Skill Talisman)",
+            "category": "Talisman",
+            "campaign": "Base Game",
+            "region": "Limgrave",
+            "is_missable": True,
+            "exclusive_group": "EX_ALEXANDER_JAR",
+            "exclusive_reason": "Requires killing Iron Fist Alexander early before completing his questline. Mutually exclusive with Shard of Alexander (15%) in the same cycle.",
+            "steps": [
+                {
+                    "step_key": "kill_alexander_early",
+                    "gate_id": "GATE_NONE",
+                    "seq": 1,
+                    "zone_order": 10,
+                    "region_label": "Limgrave",
+                    "text": "Limgrave (Agheel Lake North) or Caelid (Redmane Castle): Kill Iron Fist Alexander before Crumbling Farum Azula to loot Warrior Jar Shard."
+                }
+            ]
+        },
+        {
+            "item_id": "shard_of_alexander",
+            "name": "Shard of Alexander (15% Skill Talisman)",
+            "category": "Talisman",
+            "campaign": "Base Game",
+            "region": "Crumbling Farum Azula",
+            "is_missable": False,
+            "exclusive_group": "EX_ALEXANDER_JAR",
+            "exclusive_reason": "Requires keeping Alexander alive until Crumbling Farum Azula. Mutually exclusive with Warrior Jar Shard (10%) in the same cycle.",
+            "steps": [
+                {
+                    "step_key": "alexander_radahn_gelmir",
+                    "gate_id": "GATE_NONE",
+                    "seq": 1,
+                    "zone_order": 45,
+                    "region_label": "Mt. Gelmir & Volcano Manor",
+                    "text": "Caelid & Mt. Gelmir: Exhaust Alexander's dialogue on Radahn's battlefield, then speak to him in the lava river south of Fort Laiedd."
+                },
+                {
+                    "step_key": "alexander_farum_duel",
+                    "gate_id": "GATE_NONE",
+                    "seq": 2,
+                    "zone_order": 80,
+                    "region_label": "Crumbling Farum Azula",
+                    "text": "Crumbling Farum Azula (Dragon Temple Lift): Unlock Stonesword Key fog gate, duel Alexander at the ruined plaza, and defeat him for Shard of Alexander and Alexander's Innards."
+                }
+            ]
+        },
+        {
+            "item_id": "latenna_somber_ancient_stone",
+            "name": "Somber Ancient Dragon Smithing Stone (Latenna Questline)",
+            "category": "Upgrade Material",
+            "campaign": "Base Game",
+            "region": "Liurnia / Consecrated Snowfield",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "latenna_haligtree_medallion",
+                    "gate_id": "GATE_B_CASTLE_SOL",
+                    "seq": 1,
+                    "zone_order": 20,
+                    "region_label": "Liurnia of the Lakes",
+                    "text": "Liurnia (Village of the Albinaurics & Slumbering Wolf's Shack): Obtain Haligtree Secret Medallion (Right) from Albus, show to Latenna, and recruit her as Spirit Ash BEFORE looting the Left Medallion at Castle Sol."
+                },
+                {
+                    "step_key": "latenna_apostate_derelict",
+                    "gate_id": "GATE_NONE",
+                    "seq": 2,
+                    "zone_order": 70,
+                    "region_label": "Snowfield & Mohgwyn Palace",
+                    "text": "Consecrated Snowfield (Apostate Derelict): Summon Latenna before Phillia (giant Albinauric woman) for 1x Somber Ancient Dragon Smithing Stone."
+                }
+            ]
+        },
+        {
+            "item_id": "anastasia_somber_ancient_stone",
+            "name": "Somber Ancient Dragon Smithing Stone (Anastasia Invasion)",
+            "category": "Upgrade Material",
+            "campaign": "Base Game",
+            "region": "Consecrated Snowfield",
+            "is_missable": False,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "anastasia_snowfield_drop",
+                    "gate_id": "GATE_NONE",
+                    "seq": 1,
+                    "zone_order": 70,
+                    "region_label": "Snowfield & Mohgwyn Palace",
+                    "text": "Consecrated Snowfield (frozen river southwest of Ordina): Defeat Invader Anastasia, Tarnished-Eater along the river canyon for 1x Somber Ancient Dragon Smithing Stone."
+                }
+            ]
+        },
+        {
+            "item_id": "gurranq_ancient_dragon_stone",
+            "name": "Ancient Dragon Smithing Stone (Gurranq — 9 Deathroots)",
+            "category": "Upgrade Material",
+            "campaign": "Base Game",
+            "region": "Dragonbarrow - Bestial Sanctum",
+            "is_missable": False,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "deathroots_early_4",
+                    "gate_id": "GATE_NONE",
+                    "seq": 1,
+                    "zone_order": 20,
+                    "region_label": "Limgrave & Liurnia",
+                    "text": "Limgrave & Liurnia (4x Deathroots): Summonwater Village Mariner, Deathtouched Catacombs, Black Knife Catacombs, Liurnia East Mariner."
+                },
+                {
+                    "step_key": "deathroots_altus_gelmir_2",
+                    "gate_id": "GATE_NONE",
+                    "seq": 2,
+                    "zone_order": 45,
+                    "region_label": "Altus Plateau & Mt. Gelmir",
+                    "text": "Altus & Mt. Gelmir (2x Deathroots): Wyndham Ruins Mariner, Gelmir Hero's Grave."
+                },
+                {
+                    "step_key": "deathroots_mountaintops_snowfield_3",
+                    "gate_id": "GATE_NONE",
+                    "seq": 3,
+                    "zone_order": 70,
+                    "region_label": "Snowfield & Bestial Sanctum",
+                    "text": "Mountaintops & Snowfield (3x Deathroots): Giants' Mountaintop Catacombs, Stargazer's Ruins Mariner, Consecrated Snowfield Catacombs; feed all 9 to Gurranq at Bestial Sanctum (or kill him) for 1x Ancient Dragon Smithing Stone."
+                }
+            ]
+        },
+        {
+            "item_id": "somber_ancient_dragon_smithing_stone_6x_base_sweep",
+            "name": "Somber Ancient Dragon Smithing Stone (5x — Base Game Static Pickups)",
+            "category": "Upgrade Material",
+            "campaign": "Base Game",
+            "region": "Mohgwyn / Elphael / Farum Azula / Ashen Capital",
+            "is_missable": False,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "base_somber_snowfield_mohgwyn_2",
+                    "gate_id": "GATE_NONE",
+                    "seq": 1,
+                    "zone_order": 70,
+                    "region_label": "Snowfield & Mohgwyn Palace",
+                    "text": "Mohgwyn Palace (1x): Chest at the foot of the giant statue by Dynasty Mausoleum Midpoint."
+                },
+                {
+                    "step_key": "base_somber_elphael_2",
+                    "gate_id": "GATE_NONE",
+                    "seq": 2,
+                    "zone_order": 75,
+                    "region_label": "Elphael & Haligtree",
+                    "text": "Elphael (2x): (1) Chest in hidden column room reached via diagonal buttress past Prayer Room walkway; (2) Corpse at south end of east ring walkway behind patrolling Putrid Avatar."
+                },
+                {
+                    "step_key": "base_somber_farum_ashen_2",
+                    "gate_id": "GATE_NONE",
+                    "seq": 3,
+                    "zone_order": 80,
+                    "region_label": "Crumbling Farum Azula",
+                    "text": "Farum Azula & Ashen Capital (2x): (1) Gazebo behind stationary red-lightning Dragon SE of Dragon Temple Rooftop; (2) Balcony corpse by Gargoyle in Leyndell, Ashen Capital (climb petrified dragon west of main grace)."
+                }
+            ]
+        },
+        {
+            "item_id": "ancient_dragon_smithing_stone_9x_base_sweep",
+            "name": "Ancient Dragon Smithing Stone (9x — Base Game Static Pickups)",
+            "category": "Upgrade Material",
+            "campaign": "Base Game",
+            "region": "Mountaintops / Snowfield / Haligtree / Farum Azula",
+            "is_missable": False,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "base_ancient_mountaintops_1",
+                    "gate_id": "GATE_NONE",
+                    "seq": 1,
+                    "zone_order": 60,
+                    "region_label": "Mountaintops of the Giants",
+                    "text": "Mountaintops of the Giants (1x): Corpse inside the giant skull mouth SE of Church of Repose."
+                },
+                {
+                    "step_key": "base_ancient_snowfield_3",
+                    "gate_id": "GATE_NONE",
+                    "seq": 2,
+                    "zone_order": 70,
+                    "region_label": "Snowfield & Mohgwyn Palace",
+                    "text": "Consecrated Snowfield (3x): (1) Dual Night's Cavalry escorting SW caravan at night; (2) Corpse inside Yelough Anix Tunnel; (3) Corpse on frozen waterfall ledge above Great Wyrm Theodorix."
+                },
+                {
+                    "step_key": "base_ancient_haligtree_2",
+                    "gate_id": "GATE_NONE",
+                    "seq": 3,
+                    "zone_order": 75,
+                    "region_label": "Elphael & Haligtree",
+                    "text": "Miquella's Haligtree (2x): (1) Corpse under hugging statue guarded by Leonine Misbegotten south of Haligtree Town Plaza; (2) Chest in tower after defeating Loretta, Knight of the Haligtree."
+                },
+                {
+                    "step_key": "base_ancient_farum_3",
+                    "gate_id": "GATE_NONE",
+                    "seq": 4,
+                    "zone_order": 80,
+                    "region_label": "Crumbling Farum Azula",
+                    "text": "Crumbling Farum Azula (3x): (1) Swooping Dragon on curved SW plaza (Beast Grave Depths); (2) Corpse on floating platform north of Dragon Temple (past dragon statues & spiral stairs); (3) Stationary red-lightning Dragon SE of Dragon Temple Rooftop."
+                }
+            ]
+        },
+        {
+            "item_id": "dragonbolt_of_florissax",
+            "name": "Dragonbolt of Florissax & Florissax Spirit Ash",
+            "category": "Incantation / Spirit Ash",
+            "campaign": "Shadow of the Erdtree",
+            "region": "Jagged Peak",
+            "is_missable": True,
+            "exclusive_group": "EX_FLORISSAX_CHOICE",
+            "exclusive_reason": "Giving Thiollier's Concoction to the Dragon Priestess awards Dragonbolt of Florissax + Florissax Spirit Ash, locking out Priestess Heart + Flowerstone Gavel for this cycle.",
+            "steps": [
+                {
+                    "step_key": "moore_thiollier_concoction",
+                    "gate_id": "GATE_S_RUNEBREAK",
+                    "seq": 1,
+                    "zone_order": 100,
+                    "region_label": "Gravesite Plain",
+                    "text": "Gravesite Plain (Main Gate Cross & Pillar Path Cross): Exhaust Thiollier's dialogue, obtain Black Syrup from Moore, and deliver it to Thiollier for Thiollier's Concoction BEFORE breaking Miquella's Great Rune."
+                },
+                {
+                    "step_key": "florissax_sleep_potion",
+                    "gate_id": "GATE_NONE",
+                    "seq": 2,
+                    "zone_order": 140,
+                    "region_label": "Jagged Peak",
+                    "text": "Grand Altar of Dragon Communion: Pass time to night, administer Thiollier's Concoction to Florissax BEFORE defeating Bayle; defeat Bayle, then speak to Florissax for Dragonbolt and Spirit Ash."
+                }
+            ]
+        },
+        {
+            "item_id": "flowerstone_gavel",
+            "name": "Flowerstone Gavel & Priestess Heart",
+            "category": "Weapon",
+            "campaign": "Shadow of the Erdtree",
+            "region": "Jagged Peak",
+            "is_missable": True,
+            "exclusive_group": "EX_FLORISSAX_CHOICE",
+            "exclusive_reason": "Requires NOT giving Thiollier's Concoction to the Dragon Priestess before killing Bayle. Mutually exclusive with Dragonbolt of Florissax & Florissax Spirit Ash.",
+            "steps": [
+                {
+                    "step_key": "bayle_without_concoction",
+                    "gate_id": "GATE_NONE",
+                    "seq": 1,
+                    "zone_order": 140,
+                    "region_label": "Jagged Peak",
+                    "text": "Jagged Peak (Grand Altar of Dragon Communion): Speak to Dragon Priestess (do NOT administer Thiollier's Concoction), defeat Bayle the Dread at the summit, and loot Flowerstone Gavel and Priestess Heart from the altar."
+                }
+            ]
+        },
+        {
+            "item_id": "lacerating_crossed_tree",
+            "name": "Lacerating Crossed-Tree",
+            "category": "Talisman",
+            "campaign": "Shadow of the Erdtree",
+            "region": "Shadow Keep",
+            "is_missable": True,
+            "exclusive_group": "EX_LEDA_HORNSENT",
+            "exclusive_reason": "Requires assisting Leda against Hornsent in Shadow Keep before fighting Messmer. Locks out Hornsent's assistance against Messmer and Ash of War: Swift Slash.",
+            "steps": [
+                {
+                    "step_key": "dlc_break_rune",
+                    "gate_id": "GATE_S_MESSMER",
+                    "seq": 1,
+                    "zone_order": 120,
+                    "region_label": "Scadu Altus",
+                    "text": "Scadu Altus (Highroad Cross): Break Miquella's Great Rune (approach Shadow Keep), then exhaust Leda's dialogue until she declares intent to eliminate Hornsent."
+                },
+                {
+                    "step_key": "leda_invade_hornsent",
+                    "gate_id": "GATE_S_MESSMER",
+                    "seq": 2,
+                    "zone_order": 130,
+                    "region_label": "Shadow Keep & Hinterland",
+                    "text": "Shadow Keep (battlement ramp with burning boats): Use the RED summon sign to assist Leda against Hornsent BEFORE entering Messmer's chamber; speak to Leda at Highroad Cross for Lacerating Crossed-Tree."
+                }
+            ]
+        },
+        {
+            "item_id": "swift_slash_ash_of_war",
+            "name": "Ash of War: Swift Slash",
+            "category": "Ash of War",
+            "campaign": "Shadow of the Erdtree",
+            "region": "Shadow Keep",
+            "is_missable": True,
+            "exclusive_group": "EX_LEDA_HORNSENT",
+            "exclusive_reason": "Requires assisting Hornsent via the GOLD summon sign against Leda in Shadow Keep before fighting Messmer. Mutually exclusive with Lacerating Crossed-Tree in the same cycle.",
+            "steps": [
+                {
+                    "step_key": "dlc_break_rune",
+                    "gate_id": "GATE_S_MESSMER",
+                    "seq": 1,
+                    "zone_order": 120,
+                    "region_label": "Scadu Altus",
+                    "text": "Scadu Altus (Highroad Cross): Break Miquella's Great Rune (approach Shadow Keep), then exhaust Leda's dialogue until she declares intent to eliminate Hornsent."
+                },
+                {
+                    "step_key": "hornsent_defend_against_leda",
+                    "gate_id": "GATE_S_MESSMER",
+                    "seq": 2,
+                    "zone_order": 130,
+                    "region_label": "Shadow Keep & Hinterland",
+                    "text": "Shadow Keep (battlement ramp with burning boats): Use the GOLD summon sign to assist Hornsent against Leda BEFORE entering Messmer's chamber for Ash of War: Swift Slash and Leda's Rune."
+                }
+            ]
+        },
+        {
+            "item_id": "retaliatory_crossed_tree",
+            "name": "Retaliatory Crossed-Tree",
+            "category": "Talisman",
+            "campaign": "Shadow of the Erdtree",
+            "region": "Shadow Keep",
+            "is_missable": True,
+            "exclusive_group": "EX_LEDA_ANSBACH",
+            "exclusive_reason": "Requires invading and killing Ansbach with Leda in Specimen Storehouse (which requires NOT assisting Leda against Hornsent, or defending Hornsent first). Locks out Obsidian Lamina & Furious Blade of Ansbach.",
+            "steps": [
+                {
+                    "step_key": "dlc_break_rune",
+                    "gate_id": "GATE_S_MESSMER",
+                    "seq": 1,
+                    "zone_order": 120,
+                    "region_label": "Scadu Altus",
+                    "text": "Scadu Altus (Highroad Cross): Break Miquella's Great Rune (approach Shadow Keep), then exhaust Leda's dialogue until she declares intent to eliminate Hornsent."
+                },
+                {
+                    "step_key": "ansbach_freyja_scroll",
+                    "gate_id": "GATE_S_MESSMER",
+                    "seq": 2,
+                    "zone_order": 130,
+                    "region_label": "Shadow Keep & Hinterland",
+                    "text": "Shadow Keep Storehouse: Deliver Secret Rite Scroll (4th Floor) to Ansbach (1st Floor) and Letter for Freyja to Freyja (7th Floor) BEFORE defeating Messmer."
+                },
+                {
+                    "step_key": "leda_invade_ansbach",
+                    "gate_id": "GATE_S_MESSMER",
+                    "seq": 3,
+                    "zone_order": 130,
+                    "region_label": "Shadow Keep & Hinterland",
+                    "text": "Shadow Keep (Storehouse 1st Floor): Assist Leda against Ansbach via RED summon sign BEFORE defeating Messmer for Retaliatory Crossed-Tree and Ansbach's Longbow."
+                }
+            ]
+        },
+        {
+            "item_id": "obsidian_lamina",
+            "name": "Obsidian Lamina & Furious Blade of Ansbach",
+            "category": "Weapon / Incantation",
+            "campaign": "Shadow of the Erdtree",
+            "region": "Enir-Ilim",
+            "is_missable": True,
+            "exclusive_group": "EX_LEDA_ANSBACH",
+            "exclusive_reason": "Requires keeping Ansbach alive in Shadow Keep. Mutually exclusive with Retaliatory Crossed-Tree in the same cycle.",
+            "steps": [
+                {
+                    "step_key": "ansbach_freyja_scroll",
+                    "gate_id": "GATE_S_MESSMER",
+                    "seq": 1,
+                    "zone_order": 130,
+                    "region_label": "Shadow Keep & Hinterland",
+                    "text": "Shadow Keep Storehouse: Deliver Secret Rite Scroll (4th Floor) to Ansbach (1st Floor) and Letter for Freyja to Freyja (7th Floor) BEFORE defeating Messmer."
+                },
+                {
+                    "step_key": "ansbach_enir_ilim",
+                    "gate_id": "GATE_NONE",
+                    "seq": 2,
+                    "zone_order": 160,
+                    "region_label": "Enir-Ilim",
+                    "text": "Enir-Ilim: Assist Ansbach against Leda in the Cleansing Chamber, defeat Promised Consort Radahn, and loot Obsidian Lamina, Furious Blade of Ansbach, and Ansbach's Set from his corpse."
+                }
+            ]
+        },
+        {
+            "item_id": "golden_lion_shield",
+            "name": "Golden Lion Shield",
+            "category": "Shield",
+            "campaign": "Shadow of the Erdtree",
+            "region": "Shadow Keep",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "ansbach_freyja_scroll",
+                    "gate_id": "GATE_S_MESSMER",
+                    "seq": 1,
+                    "zone_order": 130,
+                    "region_label": "Shadow Keep & Hinterland",
+                    "text": "Shadow Keep Storehouse: Deliver Secret Rite Scroll (4th Floor) to Ansbach (1st Floor) and Letter for Freyja to Freyja (7th Floor) BEFORE defeating Messmer."
+                }
+            ]
+        },
+        {
+            "item_id": "st_trinas_smile_thiollier",
+            "name": "St. Trina's Smile & Thiollier's Hidden Needle",
+            "category": "Talisman / Weapon",
+            "campaign": "Shadow of the Erdtree",
+            "region": "Stone Coffin Fissure / Enir-Ilim",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "moore_thiollier_concoction",
+                    "gate_id": "GATE_S_RUNEBREAK",
+                    "seq": 1,
+                    "zone_order": 100,
+                    "region_label": "Gravesite Plain",
+                    "text": "Gravesite Plain (Main Gate Cross & Pillar Path Cross): Exhaust Thiollier's dialogue, obtain Black Syrup from Moore, and deliver it to Thiollier for Thiollier's Concoction BEFORE breaking Miquella's Great Rune."
+                },
+                {
+                    "step_key": "thiollier_fissure_trina",
+                    "gate_id": "GATE_S_ROMINA",
+                    "seq": 2,
+                    "zone_order": 114,
+                    "region_label": "Stone Coffin Fissure",
+                    "text": "Garden of Deep Purple: Imbibe nectar 4 times, defeat Thiollier's invasion for St. Trina's Smile, and imbibe twice more BEFORE burning the Sealing Tree."
+                },
+                {
+                    "step_key": "thiollier_enir_ilim_needle",
+                    "gate_id": "GATE_NONE",
+                    "seq": 3,
+                    "zone_order": 160,
+                    "region_label": "Enir-Ilim",
+                    "text": "Enir-Ilim: Defeat Needle Knight Leda and Promised Consort Radahn; loot Thiollier's Hidden Needle and Thiollier's Set from his body in the arena."
+                }
+            ]
+        },
+        {
+            "item_id": "dryleaf_arts",
+            "name": "Dryleaf Arts & Dane's Hat",
+            "category": "Weapon / Armor",
+            "campaign": "Shadow of the Erdtree",
+            "region": "Scadu Altus - Moorth Ruins",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "dane_moorth_duel",
+                    "gate_id": "GATE_S_ROMINA",
+                    "seq": 1,
+                    "zone_order": 120,
+                    "region_label": "Scadu Altus",
+                    "text": "Scadu Altus (Moorth Ruins): Collect Monk's Missive and 'May the Best Win' gesture at Highroad Cross, perform gesture before Dryleaf Dane at Moorth Ruins, and defeat him in the duel BEFORE burning the Sealing Tree."
+                }
+            ]
+        },
+        {
+            "item_id": "watchful_spirit",
+            "name": "Watchful Spirit (Incantation)",
+            "category": "Incantation",
+            "campaign": "Shadow of the Erdtree",
+            "region": "Belurat, Tower Settlement",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "grandam_belurat_spirit",
+                    "gate_id": "GATE_S_MESSMER",
+                    "seq": 1,
+                    "zone_order": 108,
+                    "region_label": "Belurat, Tower Settlement",
+                    "text": "Belurat Storeroom: Equip Divine Beast Head, unlock storeroom, and exhaust Hornsent Grandam dialogue twice for Watchful Spirit BEFORE defeating Messmer."
+                }
+            ]
+        },
+        {
+            "item_id": "sword_of_night",
+            "name": "Sword of Night",
+            "category": "Weapon",
+            "campaign": "Shadow of the Erdtree",
+            "region": "Cathedral of Manus Metyr",
+            "is_missable": True,
+            "exclusive_group": "EX_JOLAN_IRIS",
+            "exclusive_reason": "Requires giving Iris of Occultation to Swordhand of Night Jolán. Mutually exclusive with Swordhand of Night Jolán Spirit Ash (Iris of Grace).",
+            "steps": [
+                {
+                    "step_key": "ymir_bell_rhia",
+                    "gate_id": "GATE_NONE",
+                    "seq": 1,
+                    "zone_order": 105,
+                    "region_label": "Cerulean Coast & Charo's Grave",
+                    "text": "Cathedral of Manus Metyr & Cerulean Coast: Speak to Count Ymir for Hole-Laden Necklace and Ruins Map, sound the bell at Finger Ruins of Rhia for Crimson Seed Talisman +1, and return to Ymir for Beloved Stardust and Ruins Map (2nd)."
+                },
+                {
+                    "step_key": "ymir_bell_dheo",
+                    "gate_id": "GATE_NONE",
+                    "seq": 2,
+                    "zone_order": 130,
+                    "region_label": "Shadow Keep & Hinterland",
+                    "text": "Hinterland (Finger Ruins of Dheo): Use 'O Mother' gesture at Shadow Keep Back Gate statue to enter Hinterland, sound bell at Finger Ruins of Dheo for Cerulean Seed Talisman +1, and return to Ymir for Ruins Map (3rd)."
+                },
+                {
+                    "step_key": "ymir_metyr_defeat",
+                    "gate_id": "GATE_NONE",
+                    "seq": 3,
+                    "zone_order": 130,
+                    "region_label": "Cathedral of Manus Metyr",
+                    "text": "Cathedral of Manus Metyr (Finger Ruins of Miyr): Interact with Ymir's empty throne to descend into ruins, sound bell, defeat Metyr, Mother of Fingers, then defeat invading Jolán and Count Ymir to loot Maternal Staff and High Priest Set."
+                },
+                {
+                    "step_key": "jolan_iris_occultation",
+                    "gate_id": "GATE_NONE",
+                    "seq": 4,
+                    "zone_order": 130,
+                    "region_label": "Cathedral of Manus Metyr",
+                    "text": "Cathedral of Manus Metyr: Administer Iris of Occultation (from Fort of Reprimand or Church District) to Jolán slumped by the pillar for Sword of Night."
+                }
+            ]
+        },
+        {
+            "item_id": "jolan_spirit_ash",
+            "name": "Swordhand of Night Jolán / Jolán and Anna (Spirit Ash)",
+            "category": "Spirit Ash",
+            "campaign": "Shadow of the Erdtree",
+            "region": "Cathedral of Manus Metyr",
+            "is_missable": True,
+            "exclusive_group": "EX_JOLAN_IRIS",
+            "exclusive_reason": "Requires giving Iris of Grace to Swordhand of Night Jolán. Mutually exclusive with Sword of Night (Iris of Occultation).",
+            "steps": [
+                {
+                    "step_key": "ymir_bell_rhia",
+                    "gate_id": "GATE_NONE",
+                    "seq": 1,
+                    "zone_order": 105,
+                    "region_label": "Cerulean Coast & Charo's Grave",
+                    "text": "Cathedral of Manus Metyr & Cerulean Coast: Speak to Count Ymir for Hole-Laden Necklace and Ruins Map, sound the bell at Finger Ruins of Rhia for Crimson Seed Talisman +1, and return to Ymir for Beloved Stardust and Ruins Map (2nd)."
+                },
+                {
+                    "step_key": "ymir_bell_dheo",
+                    "gate_id": "GATE_NONE",
+                    "seq": 2,
+                    "zone_order": 130,
+                    "region_label": "Shadow Keep & Hinterland",
+                    "text": "Hinterland (Finger Ruins of Dheo): Use 'O Mother' gesture at Shadow Keep Back Gate statue to enter Hinterland, sound bell at Finger Ruins of Dheo for Cerulean Seed Talisman +1, and return to Ymir for Ruins Map (3rd)."
+                },
+                {
+                    "step_key": "ymir_metyr_defeat",
+                    "gate_id": "GATE_NONE",
+                    "seq": 3,
+                    "zone_order": 130,
+                    "region_label": "Cathedral of Manus Metyr",
+                    "text": "Cathedral of Manus Metyr (Finger Ruins of Miyr): Interact with Ymir's empty throne to descend into ruins, sound bell, defeat Metyr, Mother of Fingers, then defeat invading Jolán and Count Ymir to loot Maternal Staff and High Priest Set."
+                },
+                {
+                    "step_key": "jolan_iris_grace",
+                    "gate_id": "GATE_NONE",
+                    "seq": 4,
+                    "zone_order": 130,
+                    "region_label": "Cathedral of Manus Metyr & Rabbath's Rise",
+                    "text": "Cathedral of Manus Metyr & Rabbath's Rise: Administer Iris of Grace to Jolán for Swordhand of Night Jolán Spirit Ash; interact with Anna's puppet on Rabbath's Rise upper balcony to upgrade into Jolán and Anna."
+                }
+            ]
+        },
+        {
+            "item_id": "queeligns_greatsword",
+            "name": "Queelign's Greatsword",
+            "category": "Weapon",
+            "campaign": "Shadow of the Erdtree",
+            "region": "Shadow Keep - Church District",
+            "is_missable": True,
+            "exclusive_group": "EX_QUEELIGN_IRIS",
+            "exclusive_reason": "Requires giving Iris of Occultation to Fire Knight Queelign in the Prayer Room. Mutually exclusive with Fire Knight Queelign Spirit Ash.",
+            "steps": [
+                {
+                    "step_key": "queelign_invasion_belurat",
+                    "gate_id": "GATE_NONE",
+                    "seq": 1,
+                    "zone_order": 108,
+                    "region_label": "Belurat, Tower Settlement",
+                    "text": "Belurat, Tower Settlement: Defeat Invader Fire Knight Queelign in the tree courtyard near Small Private Altar grace for Crusade Insignia."
+                },
+                {
+                    "step_key": "queelign_invasion_crusade",
+                    "gate_id": "GATE_NONE",
+                    "seq": 2,
+                    "zone_order": 120,
+                    "region_label": "Scadu Altus",
+                    "text": "Scadu Altus (Church of the Crusade): Defeat Invader Fire Knight Queelign for Ash of War: Flame Skewer and Prayer Room Key."
+                },
+                {
+                    "step_key": "queelign_iris_occultation",
+                    "gate_id": "GATE_NONE",
+                    "seq": 3,
+                    "zone_order": 130,
+                    "region_label": "Shadow Keep & Hinterland",
+                    "text": "Shadow Keep (Church District Prayer Room): Unlock Prayer Room door and administer Iris of Occultation to Queelign for Queelign's Greatsword."
+                }
+            ]
+        },
+        {
+            "item_id": "queelign_spirit_ash",
+            "name": "Fire Knight Queelign (Spirit Ash)",
+            "category": "Spirit Ash",
+            "campaign": "Shadow of the Erdtree",
+            "region": "Shadow Keep - Church District",
+            "is_missable": True,
+            "exclusive_group": "EX_QUEELIGN_IRIS",
+            "exclusive_reason": "Requires giving Iris of Grace to Fire Knight Queelign in the Prayer Room. Mutually exclusive with Queelign's Greatsword.",
+            "steps": [
+                {
+                    "step_key": "queelign_invasion_belurat",
+                    "gate_id": "GATE_NONE",
+                    "seq": 1,
+                    "zone_order": 108,
+                    "region_label": "Belurat, Tower Settlement",
+                    "text": "Belurat, Tower Settlement: Defeat Invader Fire Knight Queelign in the tree courtyard near Small Private Altar grace for Crusade Insignia."
+                },
+                {
+                    "step_key": "queelign_invasion_crusade",
+                    "gate_id": "GATE_NONE",
+                    "seq": 2,
+                    "zone_order": 120,
+                    "region_label": "Scadu Altus",
+                    "text": "Scadu Altus (Church of the Crusade): Defeat Invader Fire Knight Queelign for Ash of War: Flame Skewer and Prayer Room Key."
+                },
+                {
+                    "step_key": "queelign_iris_grace",
+                    "gate_id": "GATE_NONE",
+                    "seq": 3,
+                    "zone_order": 130,
+                    "region_label": "Shadow Keep & Hinterland",
+                    "text": "Shadow Keep (Church District Prayer Room): Unlock Prayer Room door and administer Iris of Grace to Queelign for Fire Knight Queelign Spirit Ash."
+                }
+            ]
+        },
+        {
+            "item_id": "bayles_tyranny",
+            "name": "Bayle's Tyranny",
+            "category": "Incantation",
+            "campaign": "Shadow of the Erdtree",
+            "region": "Jagged Peak",
+            "is_missable": False,
+            "exclusive_group": "EX_BAYLE_HEART",
+            "exclusive_reason": "Consumes the single Heart of Bayle dropped per cycle. Mutually exclusive with Bayle's Flame Lightning in the same NG+ cycle.",
+            "steps": [
+                {
+                    "step_key": "kill_bayle_tyranny",
+                    "gate_id": "GATE_NONE",
+                    "seq": 1,
+                    "zone_order": 140,
+                    "region_label": "Jagged Peak",
+                    "text": "Jagged Peak (Summit & Grand Altar): Defeat Bayle the Dread at the summit and exchange Heart of Bayle at Grand Altar of Dragon Communion for Bayle's Tyranny."
+                }
+            ]
+        },
+        {
+            "item_id": "bayles_flame_lightning",
+            "name": "Bayle's Flame Lightning",
+            "category": "Incantation",
+            "campaign": "Shadow of the Erdtree",
+            "region": "Jagged Peak",
+            "is_missable": False,
+            "exclusive_group": "EX_BAYLE_HEART",
+            "exclusive_reason": "Consumes the single Heart of Bayle dropped per cycle. Mutually exclusive with Bayle's Tyranny in the same NG+ cycle.",
+            "steps": [
+                {
+                    "step_key": "kill_bayle_flame",
+                    "gate_id": "GATE_NONE",
+                    "seq": 1,
+                    "zone_order": 140,
+                    "region_label": "Jagged Peak",
+                    "text": "Jagged Peak (Summit & Grand Altar): Defeat Bayle the Dread at the summit and exchange Heart of Bayle at Grand Altar of Dragon Communion for Bayle's Flame Lightning."
+                }
+            ]
+        },
+        {
+            "item_id": "somber_ancient_dragon_smithing_stone_6x_dlc_sweep",
+            "name": "Somber Ancient Dragon Smithing Stone (6x — DLC Static Pickups)",
+            "category": "Upgrade Material",
+            "campaign": "Shadow of the Erdtree",
+            "region": "Gravesite Plain / Cerulean Coast / Scadu Altus / Jagged Peak / Enir-Ilim",
+            "is_missable": False,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "dlc_somber_gravesite_1",
+                    "gate_id": "GATE_NONE",
+                    "seq": 1,
+                    "zone_order": 100,
+                    "region_label": "Gravesite Plain",
+                    "text": "Gravesite Plain (1x): Defeat Ghostflame Dragon in the lake west of Greatbridge, North."
+                },
+                {
+                    "step_key": "dlc_somber_cerulean_1",
+                    "gate_id": "GATE_NONE",
+                    "seq": 2,
+                    "zone_order": 105,
+                    "region_label": "Cerulean Coast & Charo's Grave",
+                    "text": "Cerulean Coast (1x): Defeat Ghostflame Dragon on the southern coast plain."
+                },
+                {
+                    "step_key": "dlc_somber_scadu_altus_1",
+                    "gate_id": "GATE_NONE",
+                    "seq": 3,
+                    "zone_order": 120,
+                    "region_label": "Scadu Altus",
+                    "text": "Scadu Altus (1x): Defeat Ghostflame Dragon north of Fort of Reprimand (Moorth Highway, South)."
+                },
+                {
+                    "step_key": "dlc_somber_jagged_peak_2",
+                    "gate_id": "GATE_NONE",
+                    "seq": 4,
+                    "zone_order": 140,
+                    "region_label": "Jagged Peak",
+                    "text": "Jagged Peak (2x): (1) Defeat Jagged Peak Drake fighting a second drake past boulder slope; (2) Defeat Ancient Dragon Senessax in the cavern lake."
+                },
+                {
+                    "step_key": "dlc_somber_enir_ilim_1",
+                    "gate_id": "GATE_NONE",
+                    "seq": 5,
+                    "zone_order": 160,
+                    "region_label": "Enir-Ilim",
+                    "text": "Enir-Ilim (1x): Corpse on the broken outer staircase ledge below the Cleansing Chamber altar."
+                }
+            ]
+        },
+        {
+            "item_id": "ancient_dragon_smithing_stone_8x_dlc_sweep",
+            "name": "Ancient Dragon Smithing Stone (8x — DLC Static Pickups)",
+            "category": "Upgrade Material",
+            "campaign": "Shadow of the Erdtree",
+            "region": "Gravesite Plain / Scadu Altus / Jagged Peak / Rauh Base",
+            "is_missable": False,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "dlc_ancient_gravesite_2",
+                    "gate_id": "GATE_NONE",
+                    "seq": 1,
+                    "zone_order": 100,
+                    "region_label": "Gravesite Plain",
+                    "text": "Gravesite Plain (3x): (1) Ruined Forge Lava Intake altar; (2) Magma Wyrm drop inside Dragon's Pit; (3) Chest atop the Suppressing Pillar."
+                },
+                {
+                    "step_key": "dlc_ancient_scadu_altus_1",
+                    "gate_id": "GATE_NONE",
+                    "seq": 2,
+                    "zone_order": 120,
+                    "region_label": "Scadu Altus",
+                    "text": "Scadu Altus (1x): Forge altar at the end of Ruined Forge of Starfall Past."
+                },
+                {
+                    "step_key": "dlc_ancient_jagged_peak_2",
+                    "gate_id": "GATE_NONE",
+                    "seq": 3,
+                    "zone_order": 140,
+                    "region_label": "Jagged Peak",
+                    "text": "Jagged Peak (2x): (1) Corpse by 3 Skeletal Slimes before final spiritspring to summit; (2) Defeat Ancient Dragon Senessax in the cavern lake."
+                },
+                {
+                    "step_key": "dlc_ancient_rauh_2",
+                    "gate_id": "GATE_NONE",
+                    "seq": 4,
+                    "zone_order": 150,
+                    "region_label": "Ancient Ruins of Rauh",
+                    "text": "Rauh Base — Taylew's Ruined Forge (2x): (1) Balcony corpse next to central slime platform; (2) Main forge altar at the dungeon end."
+                }
+            ]
+        },
+        {
+            "item_id": "black_bow",
+            "name": "Black Bow",
+            "category": "Weapon",
+            "campaign": "Base Game",
+            "region": "Leyndell, Royal Capital",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "leyndell_black_bow",
+                    "gate_id": "GATE_B_MALIKETH",
+                    "seq": 1,
+                    "zone_order": 50,
+                    "region_label": "Leyndell & Shunning-Grounds",
+                    "text": "Leyndell (Avenue Balcony): Descend stairs past the archer, jump onto rooftops to the northeast, and loot Black Bow from the corpse on the roof BEFORE defeating Maliketh."
+                }
+            ]
+        },
+        {
+            "item_id": "lionel_s_set",
+            "name": "Lionel's Set",
+            "category": "Armor",
+            "campaign": "Base Game",
+            "region": "Leyndell, Royal Capital",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "leyndell_lionels_set",
+                    "gate_id": "GATE_B_MALIKETH",
+                    "seq": 1,
+                    "zone_order": 50,
+                    "region_label": "Leyndell & Shunning-Grounds",
+                    "text": "Leyndell (Lower Capital Church): Loot Lionel's Set (Helm, Armor, Gauntlets, Greaves) from the bed beside the site of grace BEFORE defeating Maliketh."
+                }
+            ]
+        },
+        {
+            "item_id": "ash_of_war_raptor_of_the_mists",
+            "name": "Ash of War: Raptor of the Mists",
+            "category": "Ash of War",
+            "campaign": "Base Game",
+            "region": "Liurnia - Raya Lucaria Academy",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "yura_nerijus_limgrave",
+                    "gate_id": "GATE_B_ALTUS",
+                    "seq": 1,
+                    "zone_order": 10,
+                    "region_label": "Limgrave",
+                    "text": "Limgrave (Murkwater Cave): Defeat Bloody Finger Nerijus with Yura's aid, then exhaust Yura's dialogue under the stone overpass north of the ravine."
+                },
+                {
+                    "step_key": "yura_raya_lucaria_invasion",
+                    "gate_id": "GATE_B_ALTUS",
+                    "seq": 2,
+                    "zone_order": 20,
+                    "region_label": "Liurnia of the Lakes",
+                    "text": "Raya Lucaria (Main Academy Gate): Examine RED summon sign on broken north bridge to assist Yura against Ravenmount Assassin for Ash of War: Raptor of the Mists BEFORE reaching Altus Plateau / Grand Lift of Rold."
+                }
+            ]
+        },
+        {
+            "item_id": "hammer_talisman",
+            "name": "Hammer Talisman",
+            "category": "Talisman",
+            "campaign": "Base Game",
+            "region": "Limgrave - Stormhill",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "recusant_henricus_stormhill",
+                    "gate_id": "GATE_B_VOLCANO_MANOR",
+                    "seq": 1,
+                    "zone_order": 10,
+                    "region_label": "Limgrave",
+                    "text": "Limgrave (Stormhill Colosseum): Defeat Invader Recusant Henricus in front of the colosseum northeast of Stormhill Shack for Hammer Talisman BEFORE pledging service to Tanith in Volcano Manor."
+                }
+            ]
+        },
+        {
+            "item_id": "frenzied_flame_seal",
+            "name": "Frenzied Flame Seal",
+            "category": "Sacred Seal",
+            "campaign": "Base Game",
+            "region": "Leyndell - Frenzied Flame Proscription",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "hyetta_grapes_liurnia",
+                    "gate_id": "GATE_NONE",
+                    "seq": 1,
+                    "zone_order": 20,
+                    "region_label": "Liurnia of the Lakes",
+                    "text": "Liurnia: Feed Shabriri Grapes to Hyetta at Lake-Facing Cliffs, Purified Ruins, and Gate Town Bridge; deliver Fingerprint Grape (Church of Inhibition Vyke) to Hyetta at Bellum Church."
+                },
+                {
+                    "step_key": "hyetta_proscription_seal",
+                    "gate_id": "GATE_NONE",
+                    "seq": 2,
+                    "zone_order": 50,
+                    "region_label": "Leyndell & Shunning-Grounds",
+                    "text": "Subterranean Shunning-Grounds (Frenzied Flame Proscription): Inherit Frenzied Flame from Three Fingers, speak to Hyetta, touch her eyes, and reload to collect Frenzied Flame Seal."
+                }
+            ]
+        },
+        {
+            "item_id": "white_mask_war_surgeon_set",
+            "name": "White Mask & War Surgeon Set",
+            "category": "Armor",
+            "campaign": "Base Game",
+            "region": "Mohgwyn Palace",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "mohgwyn_nameless_white_mask",
+                    "gate_id": "GATE_NONE",
+                    "seq": 1,
+                    "zone_order": 70,
+                    "region_label": "Snowfield & Mohgwyn Palace",
+                    "text": "Mohgwyn Palace (blood swamp): Defeat the Nameless White Mask NPC invader near the giant crows SE of Palace Approach Ledge-Road BEFORE defeating Mohg, Lord of Blood, to loot White Mask and the War Surgeon Set."
+                }
+            ]
+        },
+        {
+            "item_id": "magma_whip_candlestick",
+            "name": "Magma Whip Candlestick",
+            "category": "Weapon",
+            "campaign": "Base Game",
+            "region": "Volcano Manor",
+            "is_missable": True,
+            "exclusive_group": "EX_PATCHES_SURVIVAL",
+            "exclusive_reason": "Requires sparing Patches in Murkwater Cave and completing his Volcano Manor contract before killing Rykard.",
+            "steps": [
+                {
+                    "step_key": "patches_volcano_manor",
+                    "gate_id": "GATE_B_RYKARD",
+                    "seq": 1,
+                    "zone_order": 45,
+                    "region_label": "Mt. Gelmir & Volcano Manor",
+                    "text": "Volcano Manor: Spare Patches at Murkwater Cave, join Volcano Manor, complete 1st assassination contract, and speak to Patches in the manor hallway for Letter to Patches."
+                },
+                {
+                    "step_key": "tragoth_invasion",
+                    "gate_id": "GATE_B_RYKARD",
+                    "seq": 2,
+                    "zone_order": 45,
+                    "region_label": "Ruin-Strewn Precipice & Volcano Manor",
+                    "text": "Ruin-Strewn Precipice Overlook: Invade Great Horned Tragoth via RED summon sign in Magma Wyrm Makar's arena for Bull-Goat Set BEFORE defeating Rykard."
+                },
+                {
+                    "step_key": "patches_magma_whip",
+                    "gate_id": "GATE_B_RYKARD",
+                    "seq": 3,
+                    "zone_order": 45,
+                    "region_label": "Mt. Gelmir & Volcano Manor",
+                    "text": "Volcano Manor: Report to Patches in the hallway, reload area, and speak to him again to receive Magma Whip Candlestick BEFORE defeating Rykard."
+                }
+            ]
+        },
+        {
+            "item_id": "companion_jar",
+            "name": "Companion Jar & Diallos's Mask",
+            "category": "Talisman / Armor",
+            "campaign": "Base Game",
+            "region": "Liurnia - Jarburg",
+            "is_missable": True,
+            "exclusive_group": "EX_ALEXANDER_JAR",
+            "exclusive_reason": "Requires completing Alexander's full questline through Farum Azula for Alexander's Innards. Mutually exclusive with killing Alexander early for Warrior Jar Shard.",
+            "steps": [
+                {
+                    "step_key": "jarburg_diallos_setup",
+                    "gate_id": "GATE_B_RYKARD",
+                    "seq": 1,
+                    "zone_order": 20,
+                    "region_label": "Liurnia of the Lakes",
+                    "text": "Liurnia (Jarburg & Academy Gate Town) & Volcano Manor: Speak to Jar-Bairn in Jarburg, advance Diallos to Volcano Manor, then defeat Rykard or finish manor contracts so Diallos relocates to Jarburg."
+                },
+                {
+                    "step_key": "diallos_jarburg_defense",
+                    "gate_id": "GATE_NONE",
+                    "seq": 2,
+                    "zone_order": 20,
+                    "region_label": "Liurnia of the Lakes",
+                    "text": "Liurnia (Jarburg): Exhaust Diallos and Jar-Bairn dialogue, pass time until poachers attack; speak to dying Diallos, reload area, and loot Diallos's Mask and Hoslow's Petal Whip."
+                },
+                {
+                    "step_key": "jar_bairn_alexander_innards",
+                    "gate_id": "GATE_NONE",
+                    "seq": 3,
+                    "zone_order": 80,
+                    "region_label": "Crumbling Farum Azula & Jarburg",
+                    "text": "Farum Azula & Jarburg: Defeat Iron Fist Alexander in duel at Farum Azula for Alexander's Innards, deliver innards to Jar-Bairn in Jarburg, reload area, and loot Companion Jar talisman."
+                }
+            ]
+        },
+        {
+            "item_id": "flock_s_canvas_talisman",
+            "name": "Flock's Canvas Talisman",
+            "category": "Talisman",
+            "campaign": "Base Game",
+            "region": "Caelid - Gowry's Shack",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "gowry_millicent_needle",
+                    "gate_id": "GATE_NONE",
+                    "seq": 1,
+                    "zone_order": 25,
+                    "region_label": "Caelid & Dragonbarrow",
+                    "text": "Caelid (Gowry's Shack & Swamp of Aeonia): Obtain Unalloyed Gold Needle from Commander O'Neil, give to Gowry to repair, and cure Millicent at Church of the Plague."
+                },
+                {
+                    "step_key": "flock_canvas_talisman_drop",
+                    "gate_id": "GATE_NONE",
+                    "seq": 2,
+                    "zone_order": 75,
+                    "region_label": "Elphael & Haligtree",
+                    "text": "Gowry's Shack (Post-Elphael): Complete Millicent questline at Haligtree rot pool, return to Gowry's Shack in Caelid, and kill weeping Gowry for Flock's Canvas Talisman."
+                }
+            ]
+        },
+        {
+            "item_id": "aspect_of_the_crucible_breath",
+            "name": "Aspects of the Crucible: Breath & Consort's Set",
+            "category": "Incantation / Armor",
+            "campaign": "Base Game",
+            "region": "Volcano Manor",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "volcano_manor_tanith_kill",
+                    "gate_id": "GATE_NONE",
+                    "seq": 1,
+                    "zone_order": 45,
+                    "region_label": "Mt. Gelmir & Volcano Manor",
+                    "text": "Volcano Manor (Rykard Arena): Defeat Rykard, exhaust Tanith's dialogue in the manor, travel to Rykard's boss arena, and slay Tanith feasting on Rykard's corpse for Consort's Set."
+                },
+                {
+                    "step_key": "taniths_crucible_knight",
+                    "gate_id": "GATE_NONE",
+                    "seq": 2,
+                    "zone_order": 45,
+                    "region_label": "Mt. Gelmir & Volcano Manor",
+                    "text": "Volcano Manor (Rykard Arena): Defeat Tanith's invading Crucible Knight bodyguard immediately following Tanith's death to receive Aspects of the Crucible: Breath."
+                }
+            ]
+        },
+        {
+            "item_id": "scaled_armor_set_magma_shot",
+            "name": "Scaled Armor Set & Magma Shot",
+            "category": "Armor / Sorcery",
+            "campaign": "Base Game",
+            "region": "Limgrave / Volcano Manor",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "volcano_contract_istvan",
+                    "gate_id": "GATE_B_RYKARD",
+                    "seq": 1,
+                    "zone_order": 10,
+                    "region_label": "Limgrave & Stormhill",
+                    "text": "Limgrave (Warmaster's Shack / Colosseum bridge): Pick up 1st letter in Volcano Manor drawing room, invade Old Knight Istvan via red sign for Scaled Set, then report to Tanith for Magma Shot BEFORE defeating Rykard."
+                }
+            ]
+        },
+        {
+            "item_id": "crepus_s_vial",
+            "name": "Crepus's Vial",
+            "category": "Talisman",
+            "campaign": "Base Game",
+            "region": "Altus Plateau / Volcano Manor",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "volcano_contract_rileigh",
+                    "gate_id": "GATE_B_RYKARD",
+                    "seq": 1,
+                    "zone_order": 40,
+                    "region_label": "Altus Plateau & Capital Outskirts",
+                    "text": "Altus Plateau (ravine near Shaded Castle path): Pick up 2nd letter in Volcano Manor drawing room, invade Rileigh the Idle via red sign for Crepus's Vial and Black-Key Bolts BEFORE defeating Rykard."
+                }
+            ]
+        },
+        {
+            "item_id": "gelmir_s_fury",
+            "name": "Gelmir's Fury",
+            "category": "Sorcery",
+            "campaign": "Base Game",
+            "region": "Leyndell / Volcano Manor",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "bernahl_volcano_contract",
+                    "gate_id": "GATE_B_RYKARD",
+                    "seq": 1,
+                    "zone_order": 50,
+                    "region_label": "Leyndell & Shunning-Grounds",
+                    "text": "Leyndell (Fortified Manor): Complete Bernahl's invasion contract (Vargram & Wilhelm), then speak to Bernahl at Volcano Manor for Gelmir's Fury BEFORE defeating Rykard."
+                }
+            ]
+        },
+        {
+            "item_id": "gargoyle_s_halberd",
+            "name": "Gargoyle's Halberd",
+            "category": "Weapon",
+            "campaign": "Base Game",
+            "region": "Leyndell, Royal Capital",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "leyndell_gargoyle_halberd",
+                    "gate_id": "GATE_B_MALIKETH",
+                    "seq": 1,
+                    "zone_order": 50,
+                    "region_label": "Leyndell & Shunning-Grounds",
+                    "text": "Leyndell (West Capital Rampart): Defeat the Valiant Gargoyle on the grand stairway south of the rampart for Gargoyle's Halberd BEFORE defeating Maliketh."
+                }
+            ]
+        },
+        {
+            "item_id": "alberich_s_set",
+            "name": "Alberich's Set",
+            "category": "Armor",
+            "campaign": "Base Game",
+            "region": "Leyndell, Royal Capital",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "leyndell_alberichs_set",
+                    "gate_id": "GATE_B_MALIKETH",
+                    "seq": 1,
+                    "zone_order": 50,
+                    "region_label": "Leyndell & Shunning-Grounds",
+                    "text": "Leyndell (Fortified Manor): Loot Alberich's Set (Pointed Hat, Robe, Bracers, Trousers) from the corpse in the ground-floor main hall BEFORE defeating Maliketh."
+                }
+            ]
+        },
+        {
+            "item_id": "deathbed_dress",
+            "name": "Deathbed Dress",
+            "category": "Armor",
+            "campaign": "Base Game",
+            "region": "Leyndell, Royal Capital",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "leyndell_lionels_set",
+                    "gate_id": "GATE_B_MALIKETH",
+                    "seq": 1,
+                    "zone_order": 50,
+                    "region_label": "Leyndell & Shunning-Grounds",
+                    "text": "Leyndell (Lower Capital Church): Loot Deathbed Dress (and Lionel's Set) from the bed beside the site of grace BEFORE defeating Maliketh."
+                }
+            ]
+        },
+        {
+            "item_id": "two_fingers_prayerbook",
+            "name": "Two Fingers' Prayerbook",
+            "category": "Spellbook / Key Item",
+            "campaign": "Base Game",
+            "region": "Leyndell, Royal Capital",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "leyndell_two_fingers_prayerbook",
+                    "gate_id": "GATE_B_MALIKETH",
+                    "seq": 1,
+                    "zone_order": 50,
+                    "region_label": "Leyndell & Shunning-Grounds",
+                    "text": "Leyndell (Fortified Manor): Loot Two Fingers' Prayerbook (unlocks Lord's Heal and Lord's Aid) from the fireplace room near the first-floor site of grace BEFORE defeating Maliketh."
+                }
+            ]
+        },
+        {
+            "item_id": "battle_hammer",
+            "name": "Battle Hammer & Duelist Set",
+            "category": "Weapon / Armor",
+            "campaign": "Base Game",
+            "region": "Leyndell, Royal Capital",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "leyndell_duelist_farm",
+                    "gate_id": "GATE_B_MALIKETH",
+                    "seq": 1,
+                    "zone_order": 50,
+                    "region_label": "Leyndell & Shunning-Grounds",
+                    "text": "Leyndell (Colosseum Path): Farm hammer and axe Duelists south of West Capital Rampart for Battle Hammer, Duelist Greataxe, and Duelist Set BEFORE defeating Maliketh."
+                }
+            ]
+        },
+        {
+            "item_id": "hammer",
+            "name": "Hammer (Weapon)",
+            "category": "Weapon",
+            "campaign": "Base Game",
+            "region": "Leyndell, Royal Capital",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "leyndell_hammer_pickup",
+                    "gate_id": "GATE_B_MALIKETH",
+                    "seq": 1,
+                    "zone_order": 50,
+                    "region_label": "Leyndell & Shunning-Grounds",
+                    "text": "Leyndell (Fortified Manor): Loot Hammer from the table beside Sanctified Whetblade in the armory room BEFORE defeating Maliketh."
+                }
+            ]
+        },
+        {
+            "item_id": "omensmirk_mask",
+            "name": "Omensmirk Mask",
+            "category": "Armor",
+            "campaign": "Base Game",
+            "region": "Leyndell, Royal Capital",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "leyndell_omensmirk_mask",
+                    "gate_id": "GATE_B_MALIKETH",
+                    "seq": 1,
+                    "zone_order": 50,
+                    "region_label": "Leyndell & Shunning-Grounds",
+                    "text": "Leyndell (Lower Capital Church courtyard): Defeat the lesser Omenkiller patrolling the lower alley for Omensmirk Mask (+2 STR) BEFORE defeating Maliketh."
+                }
+            ]
+        },
+        {
+            "item_id": "guardian_garb_full_bloom",
+            "name": "Guardian Garb (Full Bloom)",
+            "category": "Armor",
+            "campaign": "Base Game",
+            "region": "Leyndell, Royal Capital",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "leyndell_guardian_full_bloom",
+                    "gate_id": "GATE_B_MALIKETH",
+                    "seq": 1,
+                    "zone_order": 50,
+                    "region_label": "Leyndell & Shunning-Grounds",
+                    "text": "Leyndell (giant Erdtree branches leading to Erdtree Sanctuary): Farm the blooming Erdtree Guardians for Guardian Garb (Full Bloom) BEFORE defeating Maliketh (these guardians do not spawn in Ashen Capital)."
+                }
+            ]
+        },
+        {
+            "item_id": "by_my_sword_gesture",
+            "name": "Gesture: By My Sword",
+            "category": "Gesture",
+            "campaign": "Base Game",
+            "region": "Leyndell, Royal Capital",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "leyndell_by_my_sword",
+                    "gate_id": "GATE_B_MALIKETH",
+                    "seq": 1,
+                    "zone_order": 50,
+                    "region_label": "Leyndell & Shunning-Grounds",
+                    "text": "Leyndell (Fortified Manor): Loot By My Sword gesture from the Two Fingers body chamber BEFORE defeating Maliketh."
+                }
+            ]
+        },
+        {
+            "item_id": "flightless_bird_painting",
+            "name": "Fire's Deadly Sin & Flightless Bird Painting",
+            "category": "Key Item / Incantation",
+            "campaign": "Base Game",
+            "region": "Leyndell / Altus Plateau",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "leyndell_flightless_bird_painting",
+                    "gate_id": "GATE_B_MALIKETH",
+                    "seq": 1,
+                    "zone_order": 50,
+                    "region_label": "Leyndell & Shunning-Grounds",
+                    "text": "Leyndell (Fortified Manor): Inspect Flightless Bird Painting in the ground-floor dining room near the first-floor grace BEFORE defeating Maliketh."
+                },
+                {
+                    "step_key": "windmill_village_fires_deadly_sin",
+                    "gate_id": "GATE_NONE",
+                    "seq": 2,
+                    "zone_order": 50,
+                    "region_label": "Altus Plateau & Capital Outskirts",
+                    "text": "Altus Plateau (Dominula, Windmill Village): Visit the cliff edge southeast of Windmill Heights to encounter the painter spirit and claim Fire's Deadly Sin incantation."
+                }
+            ]
+        },
+        {
+            "item_id": "inseparable_sword",
+            "name": "Inseparable Sword & Twinned Set",
+            "category": "Weapon / Armor",
+            "campaign": "Base Game",
+            "region": "Roundtable / Nokron / Deeproot Depths",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "d_twinned_armor_retrieve",
+                    "gate_id": "GATE_B_ALTUS",
+                    "seq": 1,
+                    "zone_order": 10,
+                    "region_label": "Roundtable Hold & Altus",
+                    "text": "Roundtable Hold: Reach Altus Plateau to receive Weathered Dagger from Fia, give to D, reload to find D slain, and collect Twinned Set."
+                },
+                {
+                    "step_key": "d_brother_aqueduct",
+                    "gate_id": "GATE_NONE",
+                    "seq": 2,
+                    "zone_order": 30,
+                    "region_label": "Nokron, Siofra & Underground",
+                    "text": "Nokron (Siofra Aqueduct): Give Twinned Set to D's Twin Brother slumped outside the Valiant Gargoyle arena."
+                },
+                {
+                    "step_key": "inseparable_sword_claim",
+                    "gate_id": "GATE_NONE",
+                    "seq": 3,
+                    "zone_order": 30,
+                    "region_label": "Deeproot Depths",
+                    "text": "Deeproot Depths (Prince of Death's Throne): Defeat Lichdragon Fortissax, reload area to find D's brother standing over Fia, and reload again for Inseparable Sword and Twinned Set."
+                }
+            ]
+        },
+        {
+            "item_id": "rogier_s_rapier",
+            "name": "Rogier's Rapier & Spellblade Set",
+            "category": "Weapon / Armor",
+            "campaign": "Base Game",
+            "region": "Stormveil / Roundtable Hold",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "rogiers_rapier_claim",
+                    "gate_id": "GATE_B_ALTUS",
+                    "seq": 1,
+                    "zone_order": 10,
+                    "region_label": "Stormveil & Roundtable Hold",
+                    "text": "Roundtable Hold: Defeat Godrick the Grafted and speak to Sorcerer Rogier at the balcony to receive Rogier's Rapier +8 BEFORE he falls into slumber."
+                },
+                {
+                    "step_key": "spellblade_set_claim",
+                    "gate_id": "GATE_B_FINGERSLAYER",
+                    "seq": 2,
+                    "zone_order": 10,
+                    "region_label": "Roundtable Hold",
+                    "text": "Roundtable Hold: Progress Ranni's questline until Rogier falls into slumber; pass time until he dies and loot Spellblade Set, Bell Bearing, and Letter."
+                }
+            ]
+        },
+        {
+            "item_id": "mending_rune_of_the_fell_curse",
+            "name": "Mending Rune of the Fell Curse & Omen Set",
+            "category": "Key Item / Armor / Weapon",
+            "campaign": "Base Game",
+            "region": "Leyndell & Shunning-Grounds",
+            "is_missable": True,
+            "exclusive_group": "EX_SELUVIS_POTION",
+            "exclusive_reason": "Feeding Seluvis's Potion to Dung Eater locks out the Mending Rune of the Fell Curse and normal Omen Set quest completion.",
+            "steps": [
+                {
+                    "step_key": "dungeater_free_body",
+                    "gate_id": "GATE_NONE",
+                    "seq": 1,
+                    "zone_order": 50,
+                    "region_label": "Leyndell & Shunning-Grounds",
+                    "text": "Roundtable Hold & Subterranean Shunning-Grounds: Show 1 Seedbed Curse to Dung Eater in Roundtable Hold for Sewer-Gaol Key, unlock his cell in the sewers, and choose to free him."
+                },
+                {
+                    "step_key": "dungeater_moat_invasion",
+                    "gate_id": "GATE_NONE",
+                    "seq": 2,
+                    "zone_order": 50,
+                    "region_label": "Altus Plateau & Capital Outskirts",
+                    "text": "Capital Outskirts (Outer Moat): Defeat the invading Dung Eater for Sword of Milos (ensure Boggart has moved here beforehand if completing Boggart's dialogue)."
+                },
+                {
+                    "step_key": "dungeater_seedbed_curses",
+                    "gate_id": "GATE_NONE",
+                    "seq": 3,
+                    "zone_order": 50,
+                    "region_label": "Leyndell & Shunning-Grounds",
+                    "text": "Subterranean Shunning-Grounds: Deliver 5 Seedbed Curses to bound Dung Eater (do NOT administer Seluvis's Potion) for Mending Rune of the Fell Curse; reload area for Omen Set."
+                }
+            ]
+        },
+        {
+            "item_id": "dark_moon_greatsword",
+            "name": "Dark Moon Greatsword",
+            "category": "Weapon",
+            "campaign": "Base Game",
+            "region": "Liurnia - Moonlight Altar",
+            "is_missable": False,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "ranni_start",
+                    "gate_id": "GATE_NONE",
+                    "seq": 1,
+                    "zone_order": 20,
+                    "region_label": "Liurnia of the Lakes",
+                    "text": "Liurnia (Three Sisters): Clear Caria Manor and pledge service to Ranni at Ranni's Rise."
+                },
+                {
+                    "step_key": "nokron_fingerslayer",
+                    "gate_id": "GATE_NONE",
+                    "seq": 2,
+                    "zone_order": 30,
+                    "region_label": "Nokron, Siofra & Underground",
+                    "text": "Nokron, Eternal City: Defeat Starscourge Radahn, descend into Nokron crater, and loot Fingerslayer Blade from Night's Sacred Ground."
+                },
+                {
+                    "step_key": "ainsel_baleful_astel",
+                    "gate_id": "GATE_NONE",
+                    "seq": 3,
+                    "zone_order": 30,
+                    "region_label": "Nokstella & Lake of Rot",
+                    "text": "Ainsel River & Lake of Rot: Speak to Miniature Ranni, defeat Baleful Shadow for Discarded Palace Key, unlock Raya Lucaria Grand Library chest for Dark Moon Ring, and defeat Astel."
+                },
+                {
+                    "step_key": "moonlight_altar_ring",
+                    "gate_id": "GATE_NONE",
+                    "seq": 4,
+                    "zone_order": 30,
+                    "region_label": "Liurnia - Moonlight Altar",
+                    "text": "Moonlight Altar (Cathedral of Manus Celes): Descend through hole in cathedral floor, place Dark Moon Ring on Ranni's doll body, exhaust dialogue, and receive Dark Moon Greatsword."
+                }
+            ]
+        },
+        {
+            "item_id": "falx",
+            "name": "Falx",
+            "category": "Weapon",
+            "campaign": "Shadow of the Erdtree",
+            "region": "Ancient Ruins of Rauh / Shadow Keep",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "dlc_break_rune",
+                    "gate_id": "GATE_S_MESSMER",
+                    "seq": 1,
+                    "zone_order": 120,
+                    "region_label": "Scadu Altus",
+                    "text": "Scadu Altus (Highroad Cross): Break Miquella's Great Rune (approach Shadow Keep), then exhaust Hornsent's and Leda's dialogue."
+                },
+                {
+                    "step_key": "hornsent_messmer_summon",
+                    "gate_id": "GATE_S_MESSMER",
+                    "seq": 2,
+                    "zone_order": 130,
+                    "region_label": "Shadow Keep & Hinterland",
+                    "text": "Shadow Keep: Either assist Leda against Hornsent on battlement ramp for immediate drop, OR defend/skip Hornsent, summon him inside Messmer's chamber, and exhaust his dialogue post-fight."
+                },
+                {
+                    "step_key": "hornsent_rauh_invasion",
+                    "gate_id": "GATE_S_ROMINA",
+                    "seq": 3,
+                    "zone_order": 150,
+                    "region_label": "Ancient Ruins of Rauh",
+                    "text": "Ancient Ruins of Rauh (Church of the Bud stairs): Defeat invading Hornsent BEFORE burning the Sealing Tree to loot Falx and Hornsent Set (or loot corpse in Enir-Ilim gank fight if not summoned for Messmer)."
+                }
+            ]
+        },
+        {
+            "item_id": "verdigris_greatshield",
+            "name": "Verdigris Greatshield",
+            "category": "Shield",
+            "campaign": "Shadow of the Erdtree",
+            "region": "Scadu Altus - Moore / Forager Brood Invasion",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "dlc_break_rune",
+                    "gate_id": "GATE_S_MESSMER",
+                    "seq": 1,
+                    "zone_order": 120,
+                    "region_label": "Scadu Altus",
+                    "text": "Scadu Altus: Break Miquella's Great Rune (approach Shadow Keep), then speak to Moore at Main Gate Cross."
+                },
+                {
+                    "step_key": "moore_verdigris_choice",
+                    "gate_id": "GATE_S_ROMINA",
+                    "seq": 2,
+                    "zone_order": 120,
+                    "region_label": "Scadu Altus",
+                    "text": "Gravesite Plain (Main Gate Cross) / Scadu Altus: Tell Moore 'Remain sad forever' to loot Verdigris Greatshield, Verdigris Set, and Moore's Bell Bearing north of Church of the Crusade after resting; OR tell him 'Put it behind you' to loot them after defeating him in Enir-Ilim."
+                }
+            ]
+        },
+        {
+            "item_id": "forager_brood_cookbook_7",
+            "name": "Forager Brood Cookbook (7)",
+            "category": "Cookbook",
+            "campaign": "Shadow of the Erdtree",
+            "region": "Scadu Altus / Gravesite Plain",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "forager_brood_4_heal",
+                    "gate_id": "GATE_S_ROMINA",
+                    "seq": 1,
+                    "zone_order": 120,
+                    "region_label": "Scadu Altus",
+                    "text": "Scadu Altus (North of Church of the Crusade): Heal the shivering Forager Brood with a Warming Stone or Sunwarmth Stone, then reload the area to receive Forager Brood Cookbook (4)."
+                },
+                {
+                    "step_key": "forager_brood_7_moore",
+                    "gate_id": "GATE_S_ROMINA",
+                    "seq": 2,
+                    "zone_order": 120,
+                    "region_label": "Scadu Altus",
+                    "text": "Gravesite Plain (Main Gate Cross): Speak to Moore and select 'Talk to Moore' after obtaining Cookbook (4) to receive Forager Brood Cookbook (7) BEFORE Moore dies, moves, or the Sealing Tree is burned."
+                }
+            ]
+        },
+        {
+            "item_id": "freyja_s_greatsword",
+            "name": "Freyja's Greatsword",
+            "category": "Weapon",
+            "campaign": "Shadow of the Erdtree",
+            "region": "Enir-Ilim / Shadow Keep - Redmane Freyja",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "ansbach_freyja_scroll",
+                    "gate_id": "GATE_S_MESSMER",
+                    "seq": 1,
+                    "zone_order": 130,
+                    "region_label": "Shadow Keep & Hinterland",
+                    "text": "Shadow Keep Specimen Storehouse: Speak to Ansbach (1st Floor) and Freyja (7th Floor), retrieve Secret Rite Scroll (4th Floor), deliver scroll to Ansbach, deliver Letter for Freyja to Freyja, and skip/defend Hornsent BEFORE fighting Messmer."
+                },
+                {
+                    "step_key": "freyja_enir_ilim",
+                    "gate_id": "GATE_NONE",
+                    "seq": 2,
+                    "zone_order": 160,
+                    "region_label": "Enir-Ilim",
+                    "text": "Enir-Ilim (Cleansing Chamber Anteroom): Defeat Redmane Freyja during the Leda and Allies battle to loot Freyja's Greatsword and Freyja's Set from her corpse (or loot at Storehouse 7th Floor if letter was not delivered)."
+                }
+            ]
+        },
+        {
+            "item_id": "ansbach_s_longbow",
+            "name": "Ansbach's Longbow",
+            "category": "Weapon",
+            "campaign": "Shadow of the Erdtree",
+            "region": "Shadow Keep",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "ansbach_freyja_scroll",
+                    "gate_id": "GATE_S_MESSMER",
+                    "seq": 1,
+                    "zone_order": 130,
+                    "region_label": "Shadow Keep & Hinterland",
+                    "text": "Shadow Keep Specimen Storehouse: Speak to Ansbach (1st Floor) and Freyja (7th Floor), retrieve Secret Rite Scroll (4th Floor), deliver scroll to Ansbach, deliver Letter for Freyja to Freyja, and skip/defend Hornsent BEFORE fighting Messmer."
+                },
+                {
+                    "step_key": "ansbach_defend_or_invade",
+                    "gate_id": "GATE_S_MESSMER",
+                    "seq": 2,
+                    "zone_order": 130,
+                    "region_label": "Shadow Keep & Hinterland",
+                    "text": "Shadow Keep (Storehouse 1st Floor): Use either the GOLD summon sign to defend Ansbach against Leda (keeping Ansbach alive for Obsidian Lamina) OR the RED summon sign to kill him BEFORE entering Messmer's chamber to receive Ansbach's Longbow."
+                }
+            ]
+        },
+        {
+            "item_id": "igon_s_greatbow",
+            "name": "Igon's Greatbow",
+            "category": "Weapon",
+            "campaign": "Shadow of the Erdtree",
+            "region": "Jagged Peak - Drake Warrior Igon",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "igon_gravesite_wailing",
+                    "gate_id": "GATE_NONE",
+                    "seq": 1,
+                    "zone_order": 100,
+                    "region_label": "Gravesite Plain",
+                    "text": "Gravesite Plain (Pillar Path Waypoint): Speak to screaming Igon south of the road and exhaust his dialogue."
+                },
+                {
+                    "step_key": "igon_twin_drakes",
+                    "gate_id": "GATE_NONE",
+                    "seq": 2,
+                    "zone_order": 140,
+                    "region_label": "Jagged Peak",
+                    "text": "Jagged Peak: Defeat Ancient Dragon-Man at Dragon's Pit, defeat the twin Jagged Peak Drakes, and speak to Igon in the eastern gorge to receive Igon's Furled Finger."
+                },
+                {
+                    "step_key": "igon_defeat_bayle",
+                    "gate_id": "GATE_NONE",
+                    "seq": 3,
+                    "zone_order": 140,
+                    "region_label": "Jagged Peak",
+                    "text": "Jagged Peak Summit: Summon Igon inside Bayle's arena, defeat Bayle the Dread, then return to the twin drakes arena to loot Igon's Greatbow (equipped with Ash of War: Igon's Drake Hunt), Igon's Set, and Igon's Bell Bearing."
+                }
+            ]
+        },
+        {
+            "item_id": "maternal_staff",
+            "name": "Maternal Staff",
+            "category": "Weapon",
+            "campaign": "Shadow of the Erdtree",
+            "region": "Cathedral of Manus Metyr - Count Ymir",
+            "is_missable": False,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "ymir_bell_rhia",
+                    "gate_id": "GATE_NONE",
+                    "seq": 1,
+                    "zone_order": 105,
+                    "region_label": "Cerulean Coast & Charo's Grave",
+                    "text": "Cathedral of Manus Metyr & Cerulean Coast: Speak to Count Ymir for Hole-Laden Necklace and Ruins Map, sound the bell at Finger Ruins of Rhia for Crimson Seed Talisman +1, and return to Ymir for Beloved Stardust and Ruins Map (2nd)."
+                },
+                {
+                    "step_key": "ymir_bell_dheo",
+                    "gate_id": "GATE_NONE",
+                    "seq": 2,
+                    "zone_order": 130,
+                    "region_label": "Shadow Keep & Hinterland",
+                    "text": "Hinterland (Finger Ruins of Dheo): Use 'O Mother' gesture at Shadow Keep Back Gate statue to enter Hinterland, sound bell at Finger Ruins of Dheo for Cerulean Seed Talisman +1, and return to Ymir for Ruins Map (3rd)."
+                },
+                {
+                    "step_key": "ymir_metyr_defeat",
+                    "gate_id": "GATE_NONE",
+                    "seq": 3,
+                    "zone_order": 130,
+                    "region_label": "Cathedral of Manus Metyr",
+                    "text": "Cathedral of Manus Metyr (Finger Ruins of Miyr): Interact with Ymir's empty throne to descend into ruins, sound bell, defeat Metyr, Mother of Fingers, then defeat invading Jolán and Count Ymir to loot Maternal Staff, High Priest Set, and Ymir's Bell Bearing."
+                }
+            ]
+        },
+        {
+            "item_id": "dane_s_footwork",
+            "name": "Dane's Footwork",
+            "category": "Weapon",
+            "campaign": "Shadow of the Erdtree",
+            "region": "Enir-Ilim - Dryleaf Dane",
+            "is_missable": False,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "dane_enir_ilim",
+                    "gate_id": "GATE_NONE",
+                    "seq": 1,
+                    "zone_order": 160,
+                    "region_label": "Enir-Ilim",
+                    "text": "Enir-Ilim (Cleansing Chamber Anteroom): Defeat Dryleaf Dane during the battle against Needle Knight Leda and her allies, then loot Dane's Footwork from his corpse."
+                }
+            ]
+        },
+        {
+            "item_id": "leda_s_sword",
+            "name": "Leda's Sword",
+            "category": "Weapon",
+            "campaign": "Shadow of the Erdtree",
+            "region": "Enir-Ilim - Needle Knight Leda",
+            "is_missable": False,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "dlc_break_rune",
+                    "gate_id": "GATE_S_MESSMER",
+                    "seq": 1,
+                    "zone_order": 120,
+                    "region_label": "Scadu Altus",
+                    "text": "Scadu Altus (Highroad Cross): Break Miquella's Great Rune (approach Shadow Keep), then exhaust Leda's dialogue."
+                },
+                {
+                    "step_key": "leda_enir_ilim",
+                    "gate_id": "GATE_NONE",
+                    "seq": 2,
+                    "zone_order": 160,
+                    "region_label": "Enir-Ilim",
+                    "text": "Enir-Ilim (Cleansing Chamber Anteroom): Defeat Needle Knight Leda and her allies in the grand hall, then loot Leda's Sword and Leda's Armor from her corpse."
+                }
+            ]
+        },
+        {
+            "item_id": "st_trinas_blossom",
+            "name": "St. Trina's Blossom",
+            "category": "Armor",
+            "campaign": "Shadow of the Erdtree",
+            "region": "Stone Coffin Fissure",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "dlc_break_rune",
+                    "gate_id": "GATE_S_MESSMER",
+                    "seq": 1,
+                    "zone_order": 114,
+                    "region_label": "Scadu Altus",
+                    "text": "Scadu Altus: Break Miquella's Great Rune to unseal the Stone Coffin Fissure at the southern tip of Cerulean Coast."
+                },
+                {
+                    "step_key": "thiollier_fissure_trina",
+                    "gate_id": "GATE_S_ROMINA",
+                    "seq": 2,
+                    "zone_order": 114,
+                    "region_label": "Stone Coffin Fissure",
+                    "text": "Stone Coffin Fissure (Garden of Deep Purple): Defeat Putrescent Knight, imbibe St. Trina's nectar 4 times, relay words to Thiollier, defeat Thiollier's invasion for St. Trina's Smile, then imbibe twice more BEFORE burning the Sealing Tree."
+                },
+                {
+                    "step_key": "st_trina_blossom_loot",
+                    "gate_id": "GATE_NONE",
+                    "seq": 3,
+                    "zone_order": 160,
+                    "region_label": "Stone Coffin Fissure",
+                    "text": "Stone Coffin Fissure (Garden of Deep Purple): Defeat Promised Consort Radahn in Enir-Ilim, then return to St. Trina's body in the garden cave to loot St. Trina's Blossom."
+                }
+            ]
+        },
+        {
+            "item_id": "beloved_stardust",
+            "name": "Beloved Stardust",
+            "category": "Talisman",
+            "campaign": "Shadow of the Erdtree",
+            "region": "Cathedral of Manus Metyr - Count Ymir",
+            "is_missable": False,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "ymir_bell_rhia",
+                    "gate_id": "GATE_NONE",
+                    "seq": 1,
+                    "zone_order": 105,
+                    "region_label": "Cerulean Coast & Charo's Grave",
+                    "text": "Cathedral of Manus Metyr & Cerulean Coast: Speak to Count Ymir for Hole-Laden Necklace and Ruins Map, sound the bell at Finger Ruins of Rhia for Crimson Seed Talisman +1, and return to Ymir for Beloved Stardust and Ruins Map (2nd)."
+                }
+            ]
+        },
+        {
+            "item_id": "perfume_bottle_deadly_poison",
+            "name": "Perfume Bottle (Deadly Poison)",
+            "category": "Weapon",
+            "campaign": "Shadow of the Erdtree",
+            "region": "Gravesite Plain - Thiollier Vendor",
+            "is_missable": True,
+            "exclusive_group": None,
+            "exclusive_reason": None,
+            "steps": [
+                {
+                    "step_key": "thiollier_vendor_poison_bottle",
+                    "gate_id": "GATE_S_RUNEBREAK",
+                    "seq": 1,
+                    "zone_order": 100,
+                    "region_label": "Gravesite Plain",
+                    "text": "Gravesite Plain (Pillar Path Cross): Purchase Deadly Poison Perfume Bottle from Thiollier BEFORE breaking Miquella's Great Rune and triggering his southward departure."
+                }
+            ]
+        }
+    ]
+}
+
+# ==============================================================================
+# TIER 2: COMPLETE SHADOW OF THE ERDTREE CATALOG (135+ ITEMS WITH EXACT ZONES)
+# ==============================================================================
+SOTE_CATALOG: List[Tuple[str, str, str]] = [
+    # Weapons - Gravesite Plain & Cerulean Coast & Belurat & Ensis
+    ("Backhand Blade", "Weapon", "Gravesite Plain - Scorched Ruins North Mausoleum"),
+    ("Black Steel Greathammer", "Weapon", "Gravesite Plain - Church of Consolation"),
+    ("Anvil Hammer", "Weapon", "Gravesite Plain - Ruined Forge Lava Intake"),
+    ("Bloodfiend's Arm", "Weapon", "Gravesite Plain - Prospect Town"),
+    ("Great Katana", "Weapon", "Gravesite Plain - Ghostflame Dragon Lake"),
+    ("Dragon-Hunter's Great Katana", "Weapon", "Gravesite Plain - Dragon's Pit Terminus"),
+    ("Red Bear's Claw", "Weapon", "Gravesite Plain - Northern Nameless Mausoleum"),
+    ("Solitude Greatsword (Greatsword of Solitude)", "Weapon", "Gravesite Plain - Western Nameless Mausoleum"),
+    ("Pata", "Weapon", "Gravesite Plain - Church of Benediction"),
+    ("Forked-Tongue Hatchet", "Weapon", "Gravesite Plain - Belurat Gaol"),
+    ("Milady (Light Greatsword)", "Weapon", "Castle Ensis - Ensis Watchtower Chest"),
+    ("Rellana's Twin Blades", "Weapon", "Castle Ensis - Remembrance of the Twin Moon Knight"),
+    ("Moonrithyll's Knight Sword", "Weapon", "Castle Ensis - Carian Knight Moonrithyll"),
+    ("Bone Bow", "Weapon", "Belurat, Tower Settlement - Giant Spider Scorpion Room"),
+    ("Horned Warrior's Sword", "Weapon", "Belurat, Tower Settlement"),
+    ("Curseblade's Cirque", "Weapon", "Gravesite Plain - Scorched Ruins Arch"),
+    ("Star-Lined Sword", "Weapon", "Cerulean Coast - Demi-Human Queen Marigga"),
+    ("Death Poker / Spirit Sword", "Weapon", "Cerulean Coast - Underneath Waterfall"),
+    ("Spirit Glaive", "Weapon", "Charo's Hidden Grave"),
+    ("Putrescence Cleaver", "Weapon", "Stone Coffin Fissure - Remembrance of Putrescence"),
+    ("Velvet Sword of St. Trina", "Weapon", "Stone Coffin Fissure - Cliffside Cave"),
+    # Weapons - Scadu Altus, Manus Metyr, Shadow Keep, Hinterland
+    ("Ancient Meteoric Ore Greatsword", "Weapon", "Scadu Altus - Ruined Forge of Starfall Past"),
+    ("Fire Knight's Greatsword", "Weapon", "Shadow Keep - Specimen Storehouse (1st Floor Grace)"),
+    ("Fire Knight's Shortsword", "Weapon", "Shadow Keep - Rampart Fire Knights"),
+    ("Spear of the Impaler", "Weapon", "Shadow Keep - Remembrance of the Impaler (Messmer)"),
+    ("Shadow Sunflower Blossom", "Weapon", "Shadow Keep - Remembrance of the Shadow Sunflower (Scadutree Avatar)"),
+    ("Sword Lance", "Weapon", "Shadow Keep - Remembrance of the Wild Boar Rider (Commander Gaius)"),
+    ("Carian Sorcery Sword", "Weapon", "Castle Ensis / Scadu Altus - Behind Illusory Wall Chest"),
+    ("Smithscript Dagger", "Weapon", "Gravesite Plain - Ruined Forge Lava Intake"),
+    ("Smithscript Cirque", "Weapon", "Scadu Altus - Ruined Forge of Starfall Past"),
+    ("Smithscript Axe", "Weapon", "Ancient Ruins of Rauh - Taylew's Ruined Forge"),
+    ("Smithscript Greathammer", "Weapon", "Ancient Ruins of Rauh - Taylew's Ruined Forge"),
+    ("Smithscript Spear", "Weapon", "ancient Ruins of Rauh - Taylew's Ruined Forge"),
+    ("Smithscript Shield", "Shield", "Ancient Ruins of Rauh - Taylew's Ruined Forge"),
+    ("Dueling Shield", "Shield", "Shadow Keep - Specimen Storehouse 3rd Floor"),
+    ("Carian Thrusting Shield", "Shield", "Shadow Keep - Specimen Storehouse Back Section"),
+    ("Verdigris Greatshield", "Shield", "Scadu Altus - Moore / Forager Brood Invasion"),
+    ("Black SteelGreatshield", "Shield", "Scadu Altus - Fog Rift Fort"),
+    ("Serpent Crest Shield", "Shield", "Scadu Altus - Cave by River Painting"),
+    ("Wolf Crest Shield", "Shield", "Castle Ensis - Before Moonrithyll"),
+    ("Rakshasa's Great Katana", "Weapon", "Scadu Altus - Eastern Nameless Mausoleum"),
+    ("Death Knight's Twin Axes", "Weapon", "Scadu Altus - Fog Rift Catacombs"),
+    ("Death Knight's Longhaft Axe", "Weapon", "Ancient Ruins of Rauh - Scorpion River Catacombs"),
+    ("Lizard Greatsword", "Weapon", "Scadu Altus - Fog Rift Catacombs"),
+    ("Black Steel Twinblade", "Weapon", "Scadu Altus - Highroad Cross Black Knight"),
+    ("Messmer Soldier's Spear", "Weapon", "Scadu Altus - Messmer Encampments"),
+    ("Bloodfiend's Sacred Spear", "Weapon", "Scadu Altus - Cliffroad Terminus"),
+    ("Falx", "Weapon", "Shadow Keep / Ancient Ruins of Rauh - Hornsent"),
+    ("Gazing Finger", "Weapon", "Cathedral of Manus Metyr - Remembrance of the Mother of Fingers"),
+    ("Staff of the Great Beyond", "Weapon", "Cathedral of Manus Metyr - Remembrance of the Mother of Fingers"),
+    ("Maternal Staff", "Weapon", "Cathedral of Manus Metyr - Count Ymir"),
+    ("Dryleaf Seal", "Sacred Seal", "Scadu Altus - East Cliffside Under Moorth"),
+    ("Fire Knight's Seal", "Sacred Seal", "Shadow Keep - Behind Giant Drainage Statue"),
+    ("Spiraltree Seal", "Sacred Seal", "Ancient Ruins of Rauh - Painting Puzzle"),
+    ("Rabbath's Cannon", "Weapon", "Scadu Altus - Rabbath's Rise"),
+    ("Repeating Crossbow", "Weapon", "Scadu Altus - Ghostflame Dragon vs. Soldiers"),
+    ("Spread Crossbow", "Weapon", "Castle Ensis - Rampart Tower"),
+    ("Perfume Bottle (Firespark)", "Weapon", "Castle Ensis - Perfumer Camp"),
+    ("Perfume Bottle (Lightning)", "Weapon", "Cerulean Coast -Golden Lightning Lake"),
+    ("Perfume Bottle (Chilling)", "Weapon", "Cerulean Coast - Lamenter's Gaol"),
+    ("Perfume Bottle (Frenzyflame)", "Weapon", "Abyssal Woods -Abandoned Church"),
+    ("Perfume Bottle (Deadly Poison)", "Weapon", "Gravesite Plain - Thiollier Vendor"),
+    ("Beast Claw", "Weapon", "Gravesite Plain - Logur the Beast Claw"),
+    ("Dancing Blade of Ranah", "Weapon", "Cerulean Coast - Southern Nameless Mausoleum"),
+    # Weapons - Rauh, Abyssal Woods, Jagged Peak, Enir-Ilim
+    ("Poleblade of the Bud", "Weapon", "Ancient Ruins of Rauh - Remembrance of the Saint of the Bud (Romina)"),
+    ("Devonia's Hammer", "Weapon", "Ancient Ruins of Rauh - Crucible Knight Devonia"),
+    ("Pata of the Horned Warrior / Horned Warrior's Greatsword", "Weapon", "Enir-Ilim"),
+    ("Euporia", "Weapon", "Enir-Ilim (Belurat Drop-Down Treasure Tower)"),
+    ("Greatsword of Radahn (Lord)", "Weapon", "Enir-Ilim - Remembrance of a God and a Lord"),
+    ("Greatsword of Radahn (Light)", "Weapon", "Enir-Ilim - Remembrance of a God and a Lord"),
+    ("Freyja's Greatsword", "Weapon", "Enir-Ilim / Shadow Keep - Redmane Freyja"),
+    ("Leda's Sword", "Weapon", "Enir-Ilim - Needle Knight Leda"),
+    ("Dane's Footwork", "Weapon", "Enir-Ilim - Dryleaf Dane"),
+    ("Greatsword of Damnation", "Weapon", "Abyssal Woods - Remembrance of the Lord of Frenzied Flame (Midra)"),
+    ("Madding Hand", "Weapon", "Abyssal Woods - Outside Midra's Manse"),
+    ("Nanaya's Torch", "Weapon", "Abyssal Woods - Midra's Manse Balcony"),
+    ("Barbed Staff-Spear", "Weapon", "Abyssal Woods - Jori, Elder Inquisitor"),
+    ("Igon's Greatbow", "Weapon", "Jagged Peak - Drake Warrior Igon"),
+    ("Sword of Light / Sword of Darkness", "Weapon", "Ancient Ruins of Rauh / Fog Rift Stone Altar"),
+    # Talismans - Shadow of the Erdtree
+    ("Two-Handed Sword Talisman", "Talisman", "Ancient Ruins of Rauh - Temple Town Ruins"),
+    ("Two-Headed Turtle Talisman", "Talisman", "Gravesite Plain - Ellac River Cave Waterfall"),
+    ("Blessed Blue Dew Talisman", "Talisman", "Gravesite Plain - Church of the Benediction"),
+    ("Crimson Seed Talisman +1", "Talisman", "Cathedral of Manus Metyr - Finger Ruins of Rhia & Dheo"),
+    ("Cerulean Seed Talisman +1", "Talisman", "Cathedral of Manus Metyr - Finger Ruins of Dheo"),
+    ("Blade of Mercy", "Talisman", "Gravesite Plain - Scorched Ruins Top Tower"),
+    ("Crusade Insignia", "Talisman", "Scadu Altus - Church of the Crusade (Queelign Invasion)"),
+    ("Aged One's Exultation", "Talisman", "Abyssal Woods - Winter-Lantern Aging Untouchable Drop"),
+    ("Lord of Blood's Exultation / Talisman of Lord's Bestowal", "Talisman", "Shadow Keep - Scadutree Base"),
+    ("Pearlness / Pearl Shield Talisman", "Talisman", "Ancient Ruins of Rauh - North Camp"),
+    ("Pearl Drake Talisman +3", "Talisman", "Shadow Keep - Specimen Storehouse"),
+    ("Flamedrake Talisman +3", "Talisman", "Scadu Altus - Fort of Reprimand"),
+    ("Boltdrake Talisman +3", "Talisman", "Castle Ensis - Secret Roof Drop"),
+    ("Spelldrake Talisman +3", "Talisman", "Castle Ensis - Underneath Bridge"),
+    ("Golden Braid", "Talisman", "Shadow Keep / Hinterland - Shaman Village Tree"),
+    ("Outer God Heirloom", "Talisman", "Gravesite Plain - Prospect Town Tower"),
+    ("Shattered Stone Talisman", "Talisman", "Scadu Altus - Moorth Ruins"),
+    ("Smithing Talisman", "Talisman", "Ancient Ruins of Rauh - Taylew's Ruined Forge"),
+    ("Enraged Divine Beast", "Talisman", "Belurat, Tower Settlement - Remembrance of the Dancing Lion"),
+    ("Beloved Stardust", "Talisman", "Cathedral of Manus Metyr - Count Ymir"),
+    ("Rellana's Cameo", "Talisman", "Castle Ensis - Altar Before Rellana"),
+    ("Fine Crucible Feather Talisman", "Talisman", "Ancient Ruins of Rauh"),
+    ("Talisman of all Crucibles", "Talisman", "Ancient Ruins of Rauh - Chest Above elevators"),
+    ("Braid of Light / Dried Bouquet", "Talisman", "Enir-Ilim"),
+    # Spells (Sorceries & Incantations) - Shadow of the Erdtree
+    ("Knight's Lightning Spear", "Incantation", "Ancient Ruins of Rauh - Scorpion River Catacombs"),
+    ("Pest-Thread Spears", "Incantation", "Ancient Ruins of Rauh - Church of the Bud Staircase"),
+    ("Impenetrable Thorns", "Sorcery", "Shadow Keep - Balcony Drop From 7th Floor"),
+    ("Multilayered Ring of Light", "Incantation", "Stone Coffin Fissure - Misbegotten Drop"),
+    ("Minor Erdtree", "Incantation", "Shadow Keep / Hinterland - Shaman Village"),
+    ("Light of Miquella", "Incantation", "Enir-Ilim - Remembrance of a God and a Lord"),
+    ("Messmer's Orb", "Incantation", "Shadow Keep - Remembrance of the Impaler"),
+    ("Rellana's Twin Moons", "Sorcery", "Castle Ensis - Remembrance of the Twin Moon Knight"),
+    ("Rotten Butterflies", "Incantation", "Ancient Ruins of Rauh - Remembrance of the Saint of the Bud"),
+    ("Land of Shadow", "Incantation", "Shadow Keep - Remembrance of the Shadow Sunflower"),
+    ("Blades of Stone", "Sorcery", "Shadow Keep - Remembrance of the Wild Boar Rider"),
+    ("Vortex of Putrescence", "Sorcery", "Stone Coffin Fissure - Remembrance of Putrescence"),
+    ("Midra's Flame of Frenzy", "Incantation", "Abyssal Woods - Remembrance of the Lord of Frenzied Flame"),
+    ("Divine Beast Tornado", "Incantation", "Ancient Ruins of Rauh - Temple Town Dancing Lion"),
+    ("Fire Serpent", "Incantation", "Shadow Keep - Specimen Storehouse"),
+    ("Rain of Fire", "Incantation", "Shadow Keep - Bridge Fire Knight Salza"),
+    ("Heal from Afar", "Incantation", "Ancient Ruins of Rauh - Tree Cave"),
+    ("Golden Arcs / Giant Golden Arc", "Incantation", "Ancient Ruins of Rauh / Belurat"),
+    ("Spira", "Incantation", "Enir-Ilim"),
+    ("Miriam's Vanishing", "Sorcery", "Cathedral of Manus Metyr - Count Ymir"),
+    ("Glintblade Trio", "Sorcery", "Castle Ensis - Rooftop"),
+    ("Fleeting Microcosm", "Sorcery", "Cathedral of Manus Metyr - Count Ymir"),
+    ("Gravitational Missile", "Sorcery", "Shadow Keep / Hinterland - Fallingstar Beast"),
+    # Spirit Ashes & Finite Ancient Stones - Shadow of the Erdtree
+    ("Taylew the Golem Smith (Spirit Ash)", "Spirit Ash", "Ancient Ruins of Rauh - Taylew's Ruined Forge"),
+    ("Black Knight Commander Andreas (Spirit Ash)", "Spirit Ash", "Gravesite Plain - Fog Rift Catacombs"),
+    ("Black Knight Garrew (Spirit Ash)", "Spirit Ash", "Cerulean Coast - Western Nameless Mausoleum"),
+    ("Divine Bird Warrior Ornis (Spirit Ash)", "Spirit Ash", "Ancient Ruins of Rauh - Temple Town Chest"),
+    ("Curseblade Meera (Spirit Ash)", "Spirit Ash", "Scadu Altus - Bonny Gaol"),
+    ("Demi-Human Swordsman Yosh (Spirit Ash)", "Spirit Ash", "Gravesite Plain - Belurat Gaol"),
+    ("Horned Warrior (Spirit Ash)", "Spirit Ash", "Enir-Ilim"),
+]
+
+
+def fetch_fanapi_category(endpoint: str, category_label: str) -> List[Tuple[str, str, str, str]]:
+    """Fetches all paginated records for a Base Game category from eldenring.fanapis.com."""
+    results = []
+    page = 0
+    while page < 8:
+        url = f"{FANAPI_BASE}/{endpoint}?limit=100&page={page}"
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "ER-NGPlus-Compiler/2.0"})
+            with urllib.request.urlopen(req, timeout=10.0) as resp:
+                payload = json.loads(resp.read().decode("utf-8"))
+                data = payload.get("data", [])
+                if not data:
+                    break
+                for row in data:
+                    name = (row.get("name") or "").strip()
+                    if not name:
+                        continue
+                    item_id = slugify(name)
+                    region = (
+                        row.get("location")
+                        or row.get("region")
+                        or row.get("description", "")[:60]
+                        or "Lands Between"
+                    )
+                    results.append((item_id, name, category_label, str(region)))
+                if len(data) < 100:
+                    break
+                page += 1
+        except Exception as exc:
+            print(f"  [!] FanAPI warning on /{endpoint} page {page}: {exc}")
+            break
+    return results
+
+
+def populate_all(fetch_online: bool = True):
+    RULES_PATH.write_text(json.dumps(FULL_QUEST_RULES, indent=2, ensure_ascii=False), encoding="utf-8")
+    init_db()
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    sote_added = 0
+    for name, category, region in SOTE_CATALOG:
+        item_id = slugify(name)
+        cur.execute(
+            """
+            INSERT OR IGNORE INTO items_catalog
+            (item_id, name, category, campaign, region, is_missable, steps_json)
+            VALUES (?, ?, ?, 'Shadow of the Erdtree', ?, 0, '[]')
+            """,
+            (item_id, name, category, region),
+        )
+        sote_added += cur.rowcount
+
+    api_targets = [
+        ("weapons", "Weapon"),
+        ("shields", "Shield"),
+        ("talismans", "Talisman"),
+        ("sorceries", "Sorcery"),
+        ("incantations", "Incantation"),
+        ("spirits", "Spirit Ash"),
+        ("ashes", "Ash of War"),
+        ("armors", "Armor"),
+    ]
+
+    base_added = 0
+    if fetch_online:
+        print("Fetching Base Game catalog from eldenring.fanapis.com in parallel...")
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            futures = {
+                pool.submit(fetch_fanapi_category, ep, label): ep for ep, label in api_targets
+            }
+            for fut in as_completed(futures):
+                ep = futures[fut]
+                rows = fut.result()
+                print(f"  -> Retrieved {len(rows)} entries from /{ep}")
+                for item_id, name, category_label, region in rows:
+                    cur.execute(
+                        """
+                        INSERT OR IGNORE INTO items_catalog
+                        (item_id, name, category, campaign, region, is_missable, steps_json)
+                        VALUES (?, ?, ?, 'Base Game', ?, 0, '[]')
+                        """,
+                        (item_id, name, category_label, region),
+                    )
+                    base_added += cur.rowcount
+
+    # Remove raw FanAPI duplicates that are already covered by Tier-1 curated quest packages
+    curated_covered_raw_ids = [
+        "daedicar_s_woe",
+        "glintstone_kris",
+        "shard_spiral",
+        "taker_s_cameo",
+        "serpentbone_blade",
+        "coded_sword",
+        "millicent_s_prosthesis",
+        "ekzykes_s_decay",
+        "magma_shot",
+        "fire_s_deadly_sin",
+        "white_mask",
+        "aspects_of_the_crucible_breath",
+    ]
+    cur.executemany(
+        "DELETE FROM items_catalog WHERE item_id = ? AND steps_json = '[]'",
+        [(rid,) for rid in curated_covered_raw_ids],
+    )
+
+    # Fix FanAPI lore-description fallbacks for Base Game Dragon Communion & boss-unlocked items
+    region_overrides = [
+        ("Consecrated Snowfield — Great Wyrm Theodorix (purchase at Cathedral of Dragon Communion)", "theodorix_s_magma"),
+        ("Mountaintops of the Giants — Borealis the Freezing Fog (purchase at Cathedral of Dragon Communion)", "borealis_s_mist"),
+        ("Mt. Gelmir — Magma Wyrm (purchase at Cathedral of Dragon Communion)", "magma_breath"),
+        ("Liurnia of the Lakes — Glintstone Dragon Smarag (purchase at Cathedral of Dragon Communion)", "smarag_s_glintstone_breath"),
+        ("Limgrave — Flying Dragon Agheel (purchase at Cathedral of Dragon Communion)", "agheel_s_flame"),
+        ("Caelid — Decaying Ekzykes (purchase at Cathedral of Dragon Communion)", "ekzyke_s_decay"),
+        ("Dragonbarrow — Elder Dragon Greyoll (purchase at Cathedral of Dragon Communion)", "greyoll_s_roar"),
+        ("Caelid — Cathedral of Dragon Communion", "dragonice"),
+        ("Caelid — Cathedral of Dragon Communion", "dragonclaw"),
+        ("Caelid — Cathedral of Dragon Communion", "dragonfire"),
+        ("Caelid — Cathedral of Dragon Communion", "dragonmaw"),
+        ("Caelid — Cathedral of Dragon Communion", "glintstone_breath"),
+        ("Caelid — Cathedral of Dragon Communion", "rotten_breath"),
+        ("Limgrave — Fringefolk Hero Grave", "dragon_communion_seal"),
+        ("Caelid — Forsaken Ruins", "sword_of_st_trina"),
+    ]
+    cur.executemany("UPDATE items_catalog SET region = ? WHERE item_id = ?", region_overrides)
+
+    cur.execute("DELETE FROM items_fts")
+    cur.execute(
+        """
+        INSERT INTO items_fts (item_id, name, category, campaign, region)
+        SELECT item_id, name, category, campaign, region FROM items_catalog
+        """
+    )
+
+    total_count = cur.execute("SELECT COUNT(*) FROM items_catalog").fetchone()[0]
+    missable_count = cur.execute("SELECT COUNT(*) FROM items_catalog WHERE is_missable = 1").fetchone()[0]
+    dlc_count = cur.execute("SELECT COUNT(*) FROM items_catalog WHERE campaign = 'Shadow of the Erdtree'").fetchone()[0]
+
+    conn.commit()
+    conn.close()
+
+    print("\n========================================================")
+    print(f"✅ FULL DATABASE POPULATION COMPLETE ({DB_PATH.resolve()})")
+    print(f"   • Total Searchable Catalog Items : {total_count}")
+    print(f"   • Shadow of the Erdtree Items    : {dlc_count}")
+    print(f"   • Curated Missable / PONR Rules  : {missable_count}")
+    print("========================================================")
+
+
+if __name__ == "__main__":
+    populate_all(fetch_online=True)

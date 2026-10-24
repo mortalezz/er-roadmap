@@ -1,0 +1,12 @@
+[project]
+name = "er-ngplus-compiler"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi[standard]>=0.159.1",
+]
+
+[tool.setuptools]
+py-modules = ["main", "compiler", "seed_db", "populate_full_db"]
