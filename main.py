@@ -1,5 +1,7 @@
+import base64
 import json
 import sqlite3
+import zlib
 from typing import Dict, Any, List, Tuple
 from fastapi import FastAPI, Request, Form, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
@@ -16,7 +18,10 @@ templates = Jinja2Templates(directory="templates")
 NO_CACHE_HEADERS = {
     "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
     "Pragma": "no-cache",
+    "Vary": "HX-Request, Cookie",
 }
+
+MAX_DECOMPRESSED_COOKIE_BYTES = 65536
 
 
 def get_conn() -> sqlite3.Connection:
@@ -25,25 +30,100 @@ def get_conn() -> sqlite3.Connection:
     return sqlite3.connect(DB_PATH)
 
 
+def _encode_v2(lines: List[str]) -> str:
+    if not lines:
+        return ""
+    raw = "\n".join(lines).encode("utf-8")
+    compressed = zlib.compress(raw, level=9)
+    b64 = base64.urlsafe_b64encode(compressed).decode("ascii").rstrip("=")
+    return f"v2_{b64}"
+
+
+def _decode_v2(token: str) -> List[str]:
+    payload = token[3:]
+    if not payload:
+        return []
+    padded = payload + "=" * (-len(payload) % 4)
+    compressed = base64.urlsafe_b64decode(padded.encode("ascii"))
+    dobj = zlib.decompressobj()
+    raw = dobj.decompress(compressed, MAX_DECOMPRESSED_COOKIE_BYTES)
+    if dobj.unconsumed_tail:
+        raise ValueError("Cookie payload exceeds maximum decompressed size")
+    text = raw.decode("utf-8")
+    return [line for line in text.split("\n") if line]
+
+
 def load_session(request: Request) -> Tuple[List[Dict[str, Any]], Dict[str, bool]]:
-    """Loads current run order and step progress from request cookies."""
-    raw_order = request.cookies.get("er_order", "[]")
-    raw_steps = request.cookies.get("er_steps", "{}")
-    try:
-        order = json.loads(raw_order)
-    except Exception:
-        order = []
-    try:
-        steps = json.loads(raw_steps)
-    except Exception:
-        steps = {}
+    """Loads and validates current run order and step progress from request cookies (supports v2 compressed & v1 JSON)."""
+    raw_order = request.cookies.get("er_order", "")
+    raw_steps = request.cookies.get("er_steps", "")
+
+    order: List[Dict[str, Any]] = []
+    seen_ids = set()
+    if raw_order:
+        try:
+            if raw_order.startswith("v2_"):
+                for entry in _decode_v2(raw_order):
+                    if ":" in entry:
+                        i_id, flag = entry.rsplit(":", 1)
+                        collected = 1 if flag == "1" else 0
+                    else:
+                        i_id, collected = entry, 0
+                    if i_id and i_id not in seen_ids:
+                        seen_ids.add(i_id)
+                        order.append({"item_id": i_id, "is_collected": collected})
+            else:
+                parsed = json.loads(raw_order)
+                if isinstance(parsed, list):
+                    for item in parsed:
+                        if isinstance(item, dict):
+                            i_id = item.get("item_id")
+                            if isinstance(i_id, str) and i_id and i_id not in seen_ids:
+                                seen_ids.add(i_id)
+                                order.append({"item_id": i_id, "is_collected": 1 if item.get("is_collected") else 0})
+        except Exception:
+            order = []
+
+    steps: Dict[str, bool] = {}
+    if raw_steps:
+        try:
+            if raw_steps.startswith("v2_"):
+                for s_key in _decode_v2(raw_steps):
+                    steps[s_key] = True
+            else:
+                parsed_steps = json.loads(raw_steps)
+                if isinstance(parsed_steps, dict):
+                    for k, v in parsed_steps.items():
+                        if isinstance(k, str) and k and bool(v):
+                            steps[k] = True
+        except Exception:
+            steps = {}
+
     return order, steps
 
 
 def save_session(response: HTMLResponse, order: List[Dict[str, Any]], steps: Dict[str, bool]):
-    """Saves current run order and step progress into browser cookies."""
-    response.set_cookie(key="er_order", value=json.dumps(order), httponly=True, samesite="lax", max_age=86400 * 30)
-    response.set_cookie(key="er_steps", value=json.dumps(steps), httponly=True, samesite="lax", max_age=86400 * 30)
+    """Saves current run order and step progress into compact, unescaped v2 browser cookies."""
+    order_lines = [
+        f"{i['item_id']}:1" if i.get("is_collected") else str(i["item_id"])
+        for i in order
+        if isinstance(i, dict) and i.get("item_id")
+    ]
+    step_lines = [str(k) for k, v in steps.items() if k and v]
+    response.set_cookie(
+        key="er_order",
+        value=_encode_v2(order_lines),
+        httponly=True,
+        samesite="lax",
+        max_age=86400 * 30,
+    )
+    response.set_cookie(
+        key="er_steps",
+        value=_encode_v2(step_lines),
+        httponly=True,
+        samesite="lax",
+        max_age=86400 * 30,
+    )
 
 
 def render_workspace(request: Request, order: List[Dict[str, Any]], steps: Dict[str, bool]) -> HTMLResponse:
@@ -53,7 +133,7 @@ def render_workspace(request: Request, order: List[Dict[str, Any]], steps: Dict[
         request=request,
         name="partials/workspace.html",
         context=state,
-        headers=NO_CACHE_HEADERS,
+        headers={**NO_CACHE_HEADERS, "HX-Trigger": "refreshSearch"},
     )
     save_session(resp, order, steps)
     return resp
@@ -105,20 +185,30 @@ async def export_roadmap(request: Request):
 
 @app.post("/import", response_class=HTMLResponse)
 async def import_roadmap(request: Request, file: UploadFile = File(...)):
-    raw = await file.read()
-    data = json.loads(raw.decode("utf-8"))
-
-    order = []
-    for item in data.get("current_run_order", []):
-        i_id = item.get("item_id")
-        if i_id:
-            order.append({"item_id": i_id, "is_collected": 1 if item.get("is_collected") else 0})
-
-    steps = {}
-    for step in data.get("step_progress", []):
-        s_key = step.get("step_key")
-        if s_key:
-            steps[s_key] = bool(step.get("is_done"))
+    order: List[Dict[str, Any]] = []
+    steps: Dict[str, bool] = {}
+    try:
+        raw = await file.read()
+        data = json.loads(raw.decode("utf-8"))
+        if isinstance(data, dict):
+            raw_order = data.get("current_run_order", [])
+            if isinstance(raw_order, list):
+                seen_ids = set()
+                for item in raw_order:
+                    if isinstance(item, dict):
+                        i_id = item.get("item_id")
+                        if isinstance(i_id, str) and i_id and i_id not in seen_ids:
+                            seen_ids.add(i_id)
+                            order.append({"item_id": i_id, "is_collected": 1 if item.get("is_collected") else 0})
+            raw_steps = data.get("step_progress", [])
+            if isinstance(raw_steps, list):
+                for step in raw_steps:
+                    if isinstance(step, dict):
+                        s_key = step.get("step_key")
+                        if isinstance(s_key, str) and s_key and bool(step.get("is_done")):
+                            steps[s_key] = True
+    except Exception:
+        order, steps = load_session(request)
 
     return render_workspace(request, order, steps)
 
