@@ -26,37 +26,63 @@ Most Elden Ring checklists force you to read through hundreds of chronological s
 
 ---
 
-## Compiler Pipeline
+## Untangling "Miyazaki's Quest Knot": The Dependency-Inverted DAG
+
+Traditional Elden Ring walkthroughs suffer from **forward state-machine explosion**: they walk forward from Limgrave to Enir-Ilim trying to track *every* NPC simultaneously. Because crossing a single invisible boundary (resting in Altus, entering Volcano Manor, looting the Castle Sol medallion, killing Maliketh, or approaching Shadow Keep) mutates global world state, a player who only wants 6 specific items has to mentally simulate 40+ interleaved questlines—or discover 30 hours later that a late-game item was silently locked out back in Liurnia.
+
+**`er-ngplus-compiler` inverts the problem.** Instead of pushing you forward through every quest in the game, it treats your **queued desirable items as leaf nodes** in a **Directed Acyclic Graph (DAG)** and resolves only what you need, walking **backward from the loot to its earliest prerequisites**:
 
 ```mermaid
-flowchart LR
-    A["Queued Run Targets\n(Cookie / JSON State)"] --> B["Catalog & Rules Lookup\n(ngplus.db / 1,241 Items)"]
-    B --> C["Backward PONR Ceiling\nPropagation"]
-    C --> D["Zone Spine Scheduling\n(Base 10–80 | DLC 100–160)"]
-    D --> E["Shared step_key\nDeduplication"]
-    E --> F["Mutual Exclusivity\nConflict Detector"]
-    F --> G["Collapsible Route Legs\n& Inline PONR Banners"]
+flowchart BT
+    subgraph Targets ["1. Queued Targets (Leaf Nodes)"]
+        T1["🎯 Boiled Crab Vendor"]
+        T2["🎯 Daedicar's Woe"]
+        T3["🎯 Raging Wolf Set"]
+        T4["🎯 Taker's Cameo"]
+    end
+
+    subgraph Mid ["2. Mid-Chain Steps"]
+        S2["Altus Moat: Buy Boiled Crab\n(zone 40 | GATE_NONE)"]
+        S3["Volcano Manor: Give Serpent's Amnion\n(zone 45 | GATE_B_RYKARD @ 48)"]
+        S4["Leyndell: Invade Vargram & Wilhelm\n(zone 50 -> clamped to 47 | GATE_B_RYKARD @ 48)"]
+        S5["Mountaintops: Invade Juno Hoslow\n(zone 60 -> clamped to 47 | GATE_B_RYKARD @ 48)"]
+    end
+
+    subgraph Shared ["3. Deduplicated Shared Roots (Diamond Merge)"]
+        R1["🔗 boggart_liurnia_necklace\nLiurnia: Rya's Necklace & Boiled Prawn\n(zone 20 | Inherits GATE_B_VOLCANO_MANOR @ 44)"]
+        R2["🔗 volcano_contracts_1_2\nComplete Istvan & Rileigh Contracts\n(zone 45 | Inherits GATE_B_RYKARD @ 48)"]
+    end
+
+    T1 --> S2 --> R1
+    T2 --> S3 --> R1
+    T3 --> S4 --> R2
+    T4 --> S5 --> R2
 ```
 
-### 1. Geographical Progression Weight Spine (`zone_order`)
-To sort checkpoints along **natural game progression** regardless of the order in which you queue items, [`compiler.py`](compiler.py) maps every region and landmark in the Lands Between and the Realm of Shadow to a canonical **geographical progression weight (`zone_order`)**:
+### How the 4-Pass Solver Works ([`compiler.py`](compiler.py))
 
+#### Pass 1 — Demand-Driven Tree Shaking & Diamond Deduplication (`step_key`)
+Only prerequisite chains reachable from your queued targets are pulled from [`ngplus.db`](ngplus.db). When multiple targets depend on the same ancestor step (a "diamond dependency" like `boggart_liurnia_necklace`, `volcano_contracts_1_2`, `moore_thiollier_concoction`, or `ansbach_freyja_scroll`), the DAG merges them into a **single checkpoint** with combined target badges, inheriting the **strictest (minimum)** geographical position and PONR ceiling of all dependents.
+
+#### Pass 2 — Backward PONR Ceiling Propagation
+A quest step might take place in a late-game region (e.g., invading Juno Hoslow in Mountaintops at `zone 60` or Vargram in Leyndell at `zone 50`), while its lockout boss sits in an earlier zone (`GATE_B_RYKARD` at `pos 48`). For every chain $S = (s_1, s_2, \dots, s_k)$, `compile_run_plan()` walks **backward** ($i = k \dots 1$):
+- It propagates the earliest downstream lockout ceiling upward:
+  $$C_i = \min\big(C_{i+1},\; \text{pos}(\text{gate}(s_i))\big)$$
+- It clamps each step's scheduled position strictly before that ceiling:
+  $$\text{scheduled\_pos}(s_i) = \min\big(Z(s_i),\; C_i - 1\big)$$
+- This guarantees that every prerequisite is scheduled in the route leg **before** the PONR stop banner that would break the chain.
+
+#### Pass 3 — Geographical Progression Weighting (`zone_order`)
+To sort all surviving checkpoints along **natural game flow**, every region and landmark is assigned a canonical **geographical progression weight (`zone_order`)**:
 - **Base Game (`10`–`80`):**
   - `10` Limgrave & Stormveil → `15` Weeping Peninsula → `20` Liurnia of the Lakes & Three Sisters → `25` Caelid & Dragonbarrow → `30` Nokron, Siofra & Underground → `40` Altus Plateau & Capital Outskirts → `45` Mt. Gelmir & Volcano Manor → `50` Leyndell & Subterranean Shunning-Grounds → `60` Mountaintops of the Giants → `70` Consecrated Snowfield & Mohgwyn Palace → `75` Elphael & Haligtree → `80` Crumbling Farum Azula & Ashen Capital.
 - **Shadow of the Erdtree (`100`–`160`):**
   - `100` Gravesite Plain → `105` Cerulean Coast & Charo's Hidden Grave → `108` Belurat, Tower Settlement → `112` Castle Ensis → `114` Stone Coffin Fissure → `120` Scadu Altus → `125` Cathedral of Manus Metyr → `130` Shadow Keep & Hinterland → `140` Jagged Peak → `150` Ancient Ruins of Rauh → `152` Abyssal Woods → `160` Enir-Ilim.
 
-When you queue a mix of static regional pickups (e.g., a talisman in Caelid or a weapon in Scadu Altus) and multi-region NPC quests, the solver assigns each step its `zone_order` weight and interleaves them by `(zone_order, seq)` so you sweep each region once in natural progression order without needless backtracking.
+Static regional pickups and multi-step quest prerequisites are interleaved by `(zone_order, seq)`, so you sweep each region once in natural progression order without needless backtracking.
 
-### 2. Backward PONR Ceiling Propagation
-For any multi-step quest chain $S = (s_1, s_2, \dots, s_k)$, [`compile_run_plan()`](compiler.py) iterates in **reverse** ($i = k \dots 1$):
-- It maintains a running lockout ceiling $C_i = \min(C_{i+1}, \text{pos}(\text{gate}(s_i)))$.
-- Each step's geographical zone weight $Z(s_i)$ is clamped to:
-  $$\text{scheduled\_pos}(s_i) = \min\big(Z(s_i),\; C_i - 1\big)$$
-- This guarantees that an early prerequisite (even if its final reward is collected late in the game) is always scheduled in the route leg **before** the PONR barrier that would break the chain.
-
-### 3. Same-Run Mutual Exclusivity Collision Detection (`exclusive_group`)
-Certain rewards in Elden Ring and *Shadow of the Erdtree* are strictly mutually exclusive within a single playthrough (because they consume a single key item like *Seluvis's Potion*, *Heart of Bayle*, or require opposing Red/Gold summon sign choices). Whenever 2 or more items sharing an `exclusive_group` key are queued simultaneously, `compile_run_plan()` emits a conflict alert banner at the top of the workspace explaining why they collide and offering one-click removal buttons to resolve the collision for your current cycle.
+#### Pass 4 — Same-Run Mutual Exclusivity Collision Detection (`exclusive_group`)
+Certain rewards are strictly mutually exclusive in a single playthrough (consuming a single *Seluvis's Potion*, *Heart of Bayle*, or *Iris of Grace/Occultation*, or choosing between Red and Gold summon signs). Whenever 2+ items from the same `exclusive_group` are queued, the solver flags the collision at the top of the workspace with one-click buttons to drop either branch.
 
 ---
 
