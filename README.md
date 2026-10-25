@@ -5,9 +5,12 @@
   <p>
     <a href="https://er-ngplus-compiler.fastapicloud.dev"><strong>🌐 Live App (FastAPI Cloud)</strong></a>
     &nbsp;•&nbsp;
+    <a href="https://github.com/mortalezz/er-roadmap/releases/latest"><strong>🍎 Download macOS Native App (<code>1.5 MB</code> Rust + WebKit)</strong></a>
+    <br/>
     <img src="https://img.shields.io/badge/Catalog-1%2C241_Items-f59e0b?style=flat-square" alt="1,241 Items" />
     <img src="https://img.shields.io/badge/Curated_Chains-82_Rules_(68_Missable)-10b981?style=flat-square" alt="82 Curated Rules" />
     <img src="https://img.shields.io/badge/PONR_Gates-10_Hard_Barriers-ef4444?style=flat-square" alt="10 PONR Gates" />
+    <img src="https://img.shields.io/badge/Rust_AOT_Solver-20.7_%C2%B5s_(48k_req%2Fs)-fb923c?style=flat-square" alt="Rust AOT Solver 20.7us" />
   </p>
 </div>
 
@@ -59,7 +62,7 @@ flowchart BT
     T4 --> S5 --> R2
 ```
 
-### How the 4-Pass Solver Works ([`compiler.py`](compiler.py))
+### How the 4-Pass Solver Works ([`compiler.py`](compiler.py) & [`rust-port/src/compiler.rs`](rust-port/src/compiler.rs))
 
 #### Pass 1 — Demand-Driven Tree Shaking & Diamond Deduplication (`step_key`)
 Only prerequisite chains reachable from your queued targets are pulled from [`ngplus.db`](ngplus.db). When multiple targets depend on the same ancestor step (a "diamond dependency" like `boggart_liurnia_necklace`, `volcano_contracts_1_2`, `moore_thiollier_concoction`, or `ansbach_freyja_scroll`), the DAG merges them into a **single checkpoint** with combined target badges, inheriting the **strictest (minimum)** geographical position and PONR ceiling of all dependents.
@@ -121,7 +124,27 @@ Certain rewards are strictly mutually exclusive in a single playthrough (consumi
 
 ---
 
-## Tech Stack & Architecture
+## Standalone Native macOS App & Single-Binary Rust + AOT `.tsx` Port ([`rust-port/`](rust-port/))
+
+In addition to the Python/FastAPI cloud web app, [`rust-port/`](rust-port/) contains a **1.5 MB standalone native macOS desktop application (`ER Roadmap.app`)** and CLI server written in Rust + Objective-C (`Cocoa` / `WebKit`):
+
+- **Download Prebuilt macOS App (`arm64`):** Grab `ER-Roadmap-macOS-arm64.zip` from [**GitHub Releases**](https://github.com/mortalezz/er-roadmap/releases/latest), unzip, and launch **`ER Roadmap.app`**.
+- **Ahead-of-Time (AOT) `.tsx` → Rust Compiler ([`rust-port/build.rs`](rust-port/build.rs)):** At `cargo build` time, [`build.rs`](rust-port/build.rs) parses [`ui/Index.tsx`](rust-port/ui/Index.tsx), [`ui/Workspace.tsx`](rust-port/ui/Workspace.tsx), and [`ui/SearchDropdown.tsx`](rust-port/ui/SearchDropdown.tsx), merges adjacent static JSX tags into single string literals, and emits zero-allocation Rust `String::push_str` writers (`$OUT_DIR/generated_views.rs`). Zero Node.js or React runtime is shipped.
+- **Static `.rodata` Catalog ([`rust-port/src/generated_catalog.rs`](rust-port/src/generated_catalog.rs)):** All 1,241 items, 82 quest chains, and 10 PONR gates are baked directly into the binary's read-only data segment—zero SQLite or filesystem queries at runtime.
+- **100% Offline In-Process `WKWebView` Bridge ([`rust-port/src/macos_app.m`](rust-port/src/macos_app.m) & [`rust-port/src/offline_assets.rs`](rust-port/src/offline_assets.rs)):**
+  - Launches a native dark-appearance `NSWindow` + `WKWebView` with **zero TCP sockets and zero network dependencies** (Tailwind CSS and the Golden Great Rune SVG emblem are embedded directly inside the binary).
+  - All `hx-post` / `hx-get` actions are intercepted in-process via `window.webkit.messageHandlers.er.postMessage(...)` → C-ABI `er_ipc_dispatch()`, solving the DAG and swapping the DOM in **~20 microseconds** (`48,228 req/sec`).
+  - Persists state automatically to `~/Library/Application Support/ER-Roadmap/state.v2` (compatible with the web app's `v2_` codec) and hooks **💾 Export JSON** / **📂 Import JSON** into native macOS `NSSavePanel` / `NSOpenPanel` file dialogs.
+
+| Execution Mode | Command | Latency (9-Item DAG Solve + Render) | Throughput |
+| :--- | :--- | :---: | :---: |
+| **Native macOS Desktop App (`WKWebView` IPC)** | `open "rust-port/ER Roadmap.app"` or `./er-roadmap-rs` | **`20.73 µs`** (`0.02 ms`) | **`48,228 ops/sec`** |
+| **Benchmark CLI (`10,000` iterations)** | `./er-roadmap-rs --bench` | **`20.73 µs`** | **`48,228 ops/sec`** |
+| **Standalone HTTP Server Mode** | `./er-roadmap-rs --serve 3000` | **`~45 µs`** (loopback HTTP) | **`22,000+ req/sec`** |
+
+---
+
+## Web App Tech Stack & Stateless Cookie Engineering
 
 - **Backend:** [FastAPI](https://fastapi.tiangolo.com/) ([`main.py`](main.py)) + Jinja2 server-rendered templates ([`templates/`](templates/)).
 - **Frontend:** [HTMX `1.9.12`](https://htmx.org/) + Tailwind CSS. Zero client-side JS framework; all mutations return server-rendered partial HTML with `HX-Trigger: refreshSearch` and `Vary: HX-Request, Cookie`.
@@ -132,7 +155,7 @@ Certain rewards are strictly mutually exclusive in a single playthrough (consumi
 
 Browsers silently drop any `Set-Cookie` header exceeding **4,096 bytes (4 KB)**. Worse, passing raw JSON (`json.dumps(...)`) into Starlette's `response.set_cookie()` triggers Python's `http.cookies.SimpleCookie` quoting, which octal-escapes every comma `,` into 4 bytes (`\054`) and every quote `"` into 2 bytes (`\"`)—inflating JSON cookies by ~23% on the wire.
 
-To prevent large completionist queues from ever hitting the 4 KB ceiling, [`main.py`](main.py) implements a compact **`v2_` cookie codec** (with automatic fallback for legacy `v1` JSON cookies):
+To prevent large completionist queues from ever hitting the 4 KB ceiling, [`main.py`](main.py) (and [`rust-port/src/session.rs`](rust-port/src/session.rs)) implements a compact **`v2_` cookie codec** (with automatic fallback for legacy `v1` JSON cookies):
 1. **ID-Only Deduplicated Lines:** Stores only `item_id` (or `item_id:1` when collected) and active `True` step keys (pruning `False` entries).
 2. **`zlib` (Level 9) + `base64url` Alphabet:** Compresses the newline-joined IDs and encodes them in unpadded URL-safe Base64 (`[A-Za-z0-9_-]`), containing **zero characters** that `SimpleCookie` quotes or escapes.
 3. **Zip-Bomb & Tamper Guards:** Decompression is bounded via `zlib.decompressobj().decompress(data, MAX_DECOMPRESSED_COOKIE_BYTES=65536)` with strict post-parse structural validation so malformed or manually edited cookies never trigger an unhandled `500` or memory spike.
@@ -146,6 +169,7 @@ To prevent large completionist queues from ever hitting the 4 KB ceiling, [`main
 
 ## Local Development
 
+### Python / FastAPI Web App
 Requires Python 3.11+ and [`uv`](https://docs.astral.sh/uv/).
 
 ```bash
@@ -157,9 +181,20 @@ uv run fastapi dev main.py
 
 # 3. Rebuild ngplus.db offline from curated rules + SOTE catalog
 uv run python -c "import populate_full_db; populate_full_db.populate_all(fetch_online=False)"
+```
 
-# 4. (Optional) Full online rebuild including eldenring.fanapis.com fetch
-uv run python populate_full_db.py
+### Native macOS App & Rust Port (`rust-port/`)
+Requires Rust (`cargo`) and macOS Command Line Tools (`clang`).
+
+```bash
+# Build release binary + package "rust-port/ER Roadmap.app"
+./rust-port/build_macos_app.sh
+
+# Launch native macOS desktop app
+open "rust-port/ER Roadmap.app"
+
+# Or run the 10,000-iteration DAG + HTML render benchmark
+./rust-port/target/release/er-roadmap-rs --bench
 ```
 
 ---
@@ -174,7 +209,12 @@ uv run python populate_full_db.py
 ├── quest_rules.json             # Canonical JSON ruleset (10 PONR gates, 82 curated item chains)
 ├── ngplus.db                    # Pre-seeded SQLite 3 + FTS5 catalog (1,241 items)
 ├── static/                      # Custom PWA icons, SVG favicon & webmanifest
-└── templates/
-    ├── index.html               # App shell, Export/Import/Reset bar & floating FTS5 search overlay
-    └── partials/workspace.html  # HTMX partial: progress bar, conflict alerts, targets & collapsible route legs
+├── templates/
+│   ├── index.html               # App shell, Export/Import/Reset bar & floating FTS5 search overlay
+│   └── partials/workspace.html  # HTMX partial: progress bar, conflict alerts, targets & collapsible route legs
+└── rust-port/                   # Single-binary Rust + AOT .tsx compiler & native macOS WKWebView app
+    ├── build.rs                 # AOT .tsx -> Rust string-writer compiler + Objective-C Cocoa/WebKit builder
+    ├── build_macos_app.sh       # Packages release binary + AppIcon.icns into "ER Roadmap.app"
+    ├── ui/                      # Typed JSX/TSX templates (Index.tsx, Workspace.tsx, SearchDropdown.tsx)
+    └── src/                     # Rust DAG solver, static .rodata catalog, v2_ codec, offline Tailwind & macos_app.m
 ```

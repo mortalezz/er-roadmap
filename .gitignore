@@ -24,3 +24,9 @@ ENV/
 GEMINI.md
 .env
 .env.*
+
+# Rust port build artifacts & local experiments
+rust-port/target/
+rust-port/ER Roadmap.app/
+rust-gpu/
+*.zip

@@ -1,0 +1,204 @@
+use std::env;
+use std::fs;
+use std::path::Path;
+
+fn find_matching_brace(s: &str, start_open_brace: usize) -> usize {
+    let bytes = s.as_bytes();
+    let mut depth = 0usize;
+    let mut in_str = false;
+    let mut i = start_open_brace;
+    while i < bytes.len() {
+        let c = bytes[i];
+        if in_str {
+            if c == b'\\' {
+                i += 2;
+                continue;
+            } else if c == b'"' {
+                in_str = false;
+            }
+        } else {
+            if c == b'"' {
+                in_str = true;
+            } else if c == b'{' {
+                depth += 1;
+            } else if c == b'}' {
+                depth -= 1;
+                if depth == 0 {
+                    return i;
+                }
+            }
+        }
+        i += 1;
+    }
+    panic!("Unclosed brace starting at byte {}", start_open_brace);
+}
+
+fn rust_quote(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 8);
+    out.push('"');
+    for ch in s.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => {}
+            _ => out.push(ch),
+        }
+    }
+    out.push('"');
+    out
+}
+
+fn normalize_jsx_static(s: &str) -> String {
+    s.replace("className=", "class=")
+}
+
+fn compile_jsx_body(body: &str, out: &mut String, indent: usize) {
+    let pad = " ".repeat(indent);
+    let mut i = 0usize;
+    let bytes = body.as_bytes();
+    let mut static_acc = String::new();
+
+    let flush_static = |acc: &mut String, out_buf: &mut String, p: &str| {
+        if !acc.is_empty() {
+            let norm = normalize_jsx_static(acc);
+            out_buf.push_str(&format!("{}buf.push_str({});\n", p, rust_quote(&norm)));
+            acc.clear();
+        }
+    };
+
+    while i < bytes.len() {
+        if bytes[i] == b'{' {
+            flush_static(&mut static_acc, out, &pad);
+            let close_idx = find_matching_brace(body, i);
+            let inner = body[i + 1..close_idx].trim();
+
+            if inner.starts_with("esc:") {
+                let expr = inner["esc:".len()..].trim();
+                out.push_str(&format!("{}write_escaped(buf, &({}));\n", pad, expr));
+            } else if inner.starts_with("raw:") {
+                let expr = inner["raw:".len()..].trim();
+                out.push_str(&format!("{}buf.push_str({});\n", pad, expr));
+            } else if inner.starts_with("fmt:") {
+                let expr = inner["fmt:".len()..].trim();
+                out.push_str(&format!("{}{{ use std::fmt::Write; let _ = write!(buf, \"{{}}\", {}); }}\n", pad, expr));
+            } else if inner.starts_with("call:") {
+                let expr = inner["call:".len()..].trim();
+                out.push_str(&format!("{}{};\n", pad, expr));
+            } else if inner.starts_with("if ") || inner.starts_with("for ") {
+                let body_open = inner.find('{').expect("Expected '{' in if/for JSX block");
+                let header = inner[..body_open].trim();
+                let block_inner = &inner[body_open + 1..inner.len() - 1];
+                out.push_str(&format!("{}{} {{\n", pad, header));
+                compile_jsx_body(block_inner, out, indent + 4);
+                out.push_str(&format!("{}}}\n", pad));
+            } else {
+                panic!("Unknown JSX directive in .tsx: {}", inner);
+            }
+
+            i = close_idx + 1;
+        } else {
+            let ch = body[i..].chars().next().unwrap();
+            static_acc.push(ch);
+            i += ch.len_utf8();
+        }
+    }
+
+    flush_static(&mut static_acc, out, &pad);
+}
+
+fn compile_tsx_file(path: &str, out: &mut String) {
+    println!("cargo:rerun-if-changed={}", path);
+    let src = fs::read_to_string(path).unwrap_or_else(|e| panic!("Failed to read {}: {}", path, e));
+
+    let open_tag_start = src.find("<template ").expect("Missing <template ...> root in .tsx");
+    let open_tag_end = src[open_tag_start..].find("\">").unwrap() + open_tag_start + 1;
+    let close_tag_start = src.rfind("</template>").expect("Missing </template> in .tsx");
+
+    let tag_header = &src[open_tag_start..open_tag_end];
+    let fn_name = tag_header
+        .split("name=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap();
+    let fn_args = tag_header
+        .split("args=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap();
+
+    let jsx_body = &src[open_tag_end + 1..close_tag_start];
+
+    out.push_str(&format!(
+        "// AOT-compiled from {}\npub fn {}(buf: &mut String, {}) {{\n",
+        path, fn_name, fn_args
+    ));
+    compile_jsx_body(jsx_body, out, 4);
+    out.push_str("}\n\n");
+}
+
+fn main() {
+    let out_dir = env::var("OUT_DIR").unwrap();
+    let dest_path = Path::new(&out_dir).join("generated_views.rs");
+
+    let mut generated = String::from(
+        "// AUTO-GENERATED BY build.rs (.tsx -> Zero-Copy Rust HTML Writer)\n\
+         use crate::models::{CatalogItem, RunPlan};\n\n\
+         #[inline]\n\
+         pub fn write_escaped(buf: &mut String, s: &str) {\n\
+             for b in s.bytes() {\n\
+                 match b {\n\
+                     b'&' => buf.push_str(\"&amp;\"),\n\
+                     b'<' => buf.push_str(\"&lt;\"),\n\
+                     b'>' => buf.push_str(\"&gt;\"),\n\
+                     b'\"' => buf.push_str(\"&quot;\"),\n\
+                     b'\\'' => buf.push_str(\"&#39;\"),\n\
+                     _ => buf.push(b as char),\n\
+                 }\n\
+             }\n\
+         }\n\n",
+    );
+
+    compile_tsx_file("ui/Workspace.tsx", &mut generated);
+    compile_tsx_file("ui/Index.tsx", &mut generated);
+    compile_tsx_file("ui/SearchDropdown.tsx", &mut generated);
+
+    fs::write(&dest_path, generated).unwrap();
+
+    // Compile native macOS Cocoa + WKWebView wrapper (src/macos_app.m)
+    println!("cargo:rerun-if-changed=src/macos_app.m");
+    let obj_path = Path::new(&out_dir).join("macos_app.o");
+    let lib_path = Path::new(&out_dir).join("libmacos_app.a");
+
+    let status = std::process::Command::new("clang")
+        .args(&[
+            "-fobjc-arc",
+            "-O2",
+            "-c",
+            "src/macos_app.m",
+            "-o",
+            obj_path.to_str().unwrap(),
+        ])
+        .status()
+        .expect("Failed to invoke clang for src/macos_app.m");
+    assert!(status.success(), "clang failed to compile src/macos_app.m");
+
+    let ar_status = std::process::Command::new("ar")
+        .args(&[
+            "rcs",
+            lib_path.to_str().unwrap(),
+            obj_path.to_str().unwrap(),
+        ])
+        .status()
+        .expect("Failed to invoke ar for libmacos_app.a");
+    assert!(ar_status.success(), "ar failed to create libmacos_app.a");
+
+    println!("cargo:rustc-link-search=native={}", out_dir);
+    println!("cargo:rustc-link-lib=static=macos_app");
+    println!("cargo:rustc-link-lib=framework=Cocoa");
+    println!("cargo:rustc-link-lib=framework=WebKit");
+}
