@@ -29,6 +29,7 @@ use generated_catalog::CATALOG;
 use models::OrderEntry;
 use session::{decode_session_cookies, encode_session_cookies, export_json};
 
+#[cfg(target_os = "macos")]
 extern "C" {
     fn launch_native_macos_app();
 }
@@ -48,7 +49,11 @@ struct AppState {
 static NATIVE_STATE: Mutex<Option<AppState>> = Mutex::new(None);
 
 fn state_file_path() -> PathBuf {
-    if let Ok(home) = env::var("HOME") {
+    if let Ok(appdata) = env::var("APPDATA") {
+        let dir = PathBuf::from(appdata).join("ER-Roadmap");
+        let _ = fs::create_dir_all(&dir);
+        dir.join("state.v2")
+    } else if let Ok(home) = env::var("HOME") {
         let dir = PathBuf::from(home)
             .join("Library")
             .join("Application Support")
@@ -692,8 +697,30 @@ fn main() {
         return;
     }
 
-    // Default: Launch Standalone Offline Native macOS Desktop App (Cocoa + WKWebView, zero network)
+    #[cfg(target_os = "macos")]
     unsafe {
+        // Default on macOS: Launch Standalone Offline Native Desktop App (Cocoa + WKWebView)
         launch_native_macos_app();
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        // Default on Windows & Linux: Run zero-dependency local HTTP server
+        let addr = env::var("BIND_ADDR").unwrap_or_else(|_| String::from("127.0.0.1:8080"));
+        println!("=========================================================================");
+        println!("🦀 Elden Ring Roadmap (Rust Port)");
+        println!("=========================================================================");
+        println!("Running in local server mode on http://{}", addr);
+        println!("Open http://{} in your web browser.", addr);
+        println!("(Tip: Run with --bench to test microsecond execution latency)");
+        println!("=========================================================================");
+        let listener = TcpListener::bind(&addr).expect("Failed to bind address");
+        for stream in listener.incoming() {
+            if let Ok(s) = stream {
+                thread::spawn(move || {
+                    handle_client(s);
+                });
+            }
+        }
     }
 }

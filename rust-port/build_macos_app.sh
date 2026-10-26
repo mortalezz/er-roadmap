@@ -5,6 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="${SCRIPT_DIR}/ER Roadmap.app"
 ICON_SRC="${SCRIPT_DIR}/../static/icon-512.png"
 
+export PATH="${HOME}/.cargo/bin:${PATH}"
+
 echo "==> Building release binary (er-roadmap-rs)..."
 cargo build --release --manifest-path "${SCRIPT_DIR}/Cargo.toml"
 

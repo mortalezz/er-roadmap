@@ -151,21 +151,47 @@ Traditional walkthroughs walk forward trying to track everything at once. `er-ng
 * **Stateless Cookies:** `v2_` zlib level 9 + URL-safe Base64 codec compresses 68 simultaneous missables into ~1 KB, dodging the browser 4 KB limit. Single-tab mutations serialized via `hx-sync="this:queue"`.
 * **Native Desktop Port (`rust-port/`):** Pure-Rust AOT `.tsx` compiler that compiles React-style templates into zero-allocation string writers, bundled with an embedded Cocoa `WKWebView` IPC bridge (`20.7 µs` solve time, `1.5 MB` binary).
 
-### Local Development
+### Local Development & Compiling
+
 ```bash
 # Clone the repository
 git clone https://github.com/mortalezz/er-roadmap.git
 cd er-roadmap
 
-# Install Python dependencies and build frontend
+# Install Python dependencies and run web app locally
 uv sync
 python build_dist.py
 uv run fastapi dev main.py
-
-# Or build the native macOS desktop app
-./rust-port/build_macos_app.sh
-open "rust-port/ER Roadmap.app"
 ```
+
+#### Compiling the Rust Engine (`rust-port/`)
+The Rust engine is built with zero third-party crate dependencies. The catalog and JSX templates are compiled ahead-of-time directly into `.rodata`.
+
+* **macOS (Official & Tested):**
+  Assembles the standalone native Cocoa + WKWebView `.app` bundle:
+  ```bash
+  ./rust-port/build_macos_app.sh
+  open "rust-port/ER Roadmap.app"
+  ```
+
+* **Windows & Linux (Community / Experimental):**
+  > [!NOTE]
+  > **Disclaimer:** Compiling on Windows or Linux has **not been tested by the author**. The macOS companion app (Cocoa/WebKit) is the author's primary tested target. Contributions, testing feedback, and PRs for other platforms are very welcome!
+
+  On non-macOS systems, the binary compiles without Objective-C and defaults to a zero-dependency local microsecond HTTP server:
+  ```bash
+  cd rust-port
+
+  # Build release binary (requires Rust toolchain: cargo)
+  cargo build --release
+
+  # Run local microsecond server (starts on http://127.0.0.1:8080)
+  cargo run --release
+
+  # Or run engine micro-benchmarks
+  cargo run --release -- --bench
+  ```
+  *(Tip for Windows GUI developers: You can pair this local binary with a native Microsoft Edge WebView2, Tauri, or Wry window for an offline Windows app.)*
 </details>
 
 ---

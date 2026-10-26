@@ -169,36 +169,39 @@ fn main() {
 
     fs::write(&dest_path, generated).unwrap();
 
-    // Compile native macOS Cocoa + WKWebView wrapper (src/macos_app.m)
-    println!("cargo:rerun-if-changed=src/macos_app.m");
-    let obj_path = Path::new(&out_dir).join("macos_app.o");
-    let lib_path = Path::new(&out_dir).join("libmacos_app.a");
+    // Compile native macOS Cocoa + WKWebView wrapper (src/macos_app.m) only when targeting macOS
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    if target_os == "macos" {
+        println!("cargo:rerun-if-changed=src/macos_app.m");
+        let obj_path = Path::new(&out_dir).join("macos_app.o");
+        let lib_path = Path::new(&out_dir).join("libmacos_app.a");
 
-    let status = std::process::Command::new("clang")
-        .args(&[
-            "-fobjc-arc",
-            "-O2",
-            "-c",
-            "src/macos_app.m",
-            "-o",
-            obj_path.to_str().unwrap(),
-        ])
-        .status()
-        .expect("Failed to invoke clang for src/macos_app.m");
-    assert!(status.success(), "clang failed to compile src/macos_app.m");
+        let status = std::process::Command::new("clang")
+            .args(&[
+                "-fobjc-arc",
+                "-O2",
+                "-c",
+                "src/macos_app.m",
+                "-o",
+                obj_path.to_str().unwrap(),
+            ])
+            .status()
+            .expect("Failed to invoke clang for src/macos_app.m");
+        assert!(status.success(), "clang failed to compile src/macos_app.m");
 
-    let ar_status = std::process::Command::new("ar")
-        .args(&[
-            "rcs",
-            lib_path.to_str().unwrap(),
-            obj_path.to_str().unwrap(),
-        ])
-        .status()
-        .expect("Failed to invoke ar for libmacos_app.a");
-    assert!(ar_status.success(), "ar failed to create libmacos_app.a");
+        let ar_status = std::process::Command::new("ar")
+            .args(&[
+                "rcs",
+                lib_path.to_str().unwrap(),
+                obj_path.to_str().unwrap(),
+            ])
+            .status()
+            .expect("Failed to invoke ar for libmacos_app.a");
+        assert!(ar_status.success(), "ar failed to create libmacos_app.a");
 
-    println!("cargo:rustc-link-search=native={}", out_dir);
-    println!("cargo:rustc-link-lib=static=macos_app");
-    println!("cargo:rustc-link-lib=framework=Cocoa");
-    println!("cargo:rustc-link-lib=framework=WebKit");
+        println!("cargo:rustc-link-search=native={}", out_dir);
+        println!("cargo:rustc-link-lib=static=macos_app");
+        println!("cargo:rustc-link-lib=framework=Cocoa");
+        println!("cargo:rustc-link-lib=framework=WebKit");
+    }
 }
