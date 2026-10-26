@@ -5,7 +5,7 @@
   <p>
     <a href="https://er-ngplus-compiler.fastapicloud.dev"><strong>🌐 Launch Web App</strong></a>
     &nbsp;•&nbsp;
-    <a href="https://github.com/mortalezz/er-roadmap/releases/latest"><strong>🍎 Download macOS App (1.5 MB, Offline)</strong></a>
+    <a href="https://github.com/mortalezz/er-roadmap/releases/latest"><strong>🍎 Download macOS Companion (1.5 MB, Offline)</strong></a>
     <br/>
     <img src="https://img.shields.io/badge/Catalog-1%2C241_Items-f59e0b?style=flat-square" alt="1,241 Items" />
     <img src="https://img.shields.io/badge/Curated_Chains-82_Rules_(68_Missables_Protected)-10b981?style=flat-square" alt="68 Missables Protected" />
@@ -76,9 +76,9 @@ Certain rewards are strictly mutually exclusive in a single playthrough (e.g. *M
 
 ---
 
-## Play Your Way: Web, Mobile, or Native Desktop
+## Play Your Way: Web, Mobile, or Companion App
 
-Whether you play next to a dual monitor, a laptop, or your phone propped against your TV, the roadmap fits your setup:
+Whether you play next to a dual monitor, keep a laptop on your gaming desk, or prop your phone against your TV, the roadmap fits your battlestation setup:
 
 ### 🌐 Live Web App (Fast & Mobile-Friendly)
 Open [**er-ngplus-compiler.fastapicloud.dev**](https://er-ngplus-compiler.fastapicloud.dev) in any browser.
@@ -86,15 +86,15 @@ Open [**er-ngplus-compiler.fastapicloud.dev**](https://er-ngplus-compiler.fastap
 * **Installable PWA:** Open in Safari on iOS or Chrome on Android and tap **"Add to Home Screen"** for a full-screen, standalone app experience with no browser address bar.
 * **No Accounts / No Passwords:** Your checklist is saved automatically in your browser.
 
-### 🍎 Native macOS Desktop App (`1.5 MB`, 100% Offline)
-Playing on a Mac or keeping a MacBook on your gaming desk? Grab the native desktop app:
+### 🍎 Native macOS Companion App (`1.5 MB`, 100% Offline)
+Keep a MacBook or Mac mini open next to your gaming PC or console? Grab the native companion app:
 * **Download:** Grab [`ER-Roadmap-macOS-arm64.zip`](https://github.com/mortalezz/er-roadmap/releases/latest) from Releases, unzip, and launch **`ER Roadmap.app`**.
 * **Zero Internet Required:** Completely self-contained single binary with embedded styling and catalog. Runs smoothly even on airplane mode or spotty Wi-Fi.
-* **Microsecond Speed:** Powered by a native Rust solver and Cocoa WebKit runtime (~0.02 ms response time).
+* **Microsecond Speed:** Powered by a native Rust route solver and Cocoa WebKit runtime (~0.02 ms response time).
 
 ### 💾 Seamless Multi-Device Sync (Tiny 1 KB File)
-Switching between your desktop and your phone mid-playthrough?
-1. Click **💾 Export JSON** on your computer (downloads a tiny `~1 KB` file).
+Switching between your companion desk app and your phone mid-playthrough?
+1. Click **💾 Export JSON** on your Mac/PC (downloads a tiny `~1 KB` file).
 2. AirDrop, text, or email the file to your phone.
 3. Open the Web App on your phone, click **📂 Import JSON**, and select the file.
 4. Your entire wishlist, checked steps, and progress are instantly restored.
