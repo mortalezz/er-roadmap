@@ -42,14 +42,14 @@ You select **only the items you want for your build**, and the compiler cross-re
 ## How It Works
 
 ```
- 1. Queue Your Wishlist        2. Multi-Quest Unrolling        3. Inline Stop Barriers
-┌─────────────────────────┐   ┌─────────────────────────┐    ┌─────────────────────────┐
-│ 🎯 Magic Scorpion Charm │   │ 📍 Liurnia: Rya Errand  │    │ [!] POINT OF NO RETURN  │
-│ 🎯 Raging Wolf Set      │──►│ 📍 Altus: Volcano Manor │──► │ Handing Fingerslayer    │
-│ 🎯 Bolt of Gransax      │   │ 📍 Leyndell: Vargram    │    │ Blade to Ranni kills    │
-│ 🎯 Florissax Dragonbolt │   │ 📍 Shadow: Black Syrup  │    │ Seluvis. Complete charm │
-└─────────────────────────┘   └─────────────────────────┘    │ errand BEFORE crossing! │
-                                                             └─────────────────────────┘
+  1. Queue Your Wishlist        2. Multi-Quest Unrolling        3. Inline Stop Barriers
+┌─────────────────────────┐   ┌─────────────────────────┐   ┌─────────────────────────┐
+│ * Magic Scorpion Charm  │   │ 1. Liurnia: Rya Errand  │   │ [!] POINT OF NO RETURN  │
+│ * Raging Wolf Set       │──►│ 2. Altus: Volcano Manor │──►│ Handing Fingerslayer    │
+│ * Bolt of Gransax       │   │ 3. Leyndell: Vargram    │   │ Blade to Ranni kills    │
+│ * Florissax Dragonbolt  │   │ 4. Shadow: Black Syrup  │   │ Seluvis. Complete charm │
+│                         │   │                         │   │ errand BEFORE crossing! │
+└─────────────────────────┘   └─────────────────────────┘   └─────────────────────────┘
 ```
 
 ### 1. Queue Only What You Care About
