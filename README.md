@@ -196,6 +196,15 @@ The Rust engine is built with zero third-party crate dependencies. The catalog a
 
 ---
 
+## Acknowledgments & Community Credits
+
+Special thanks to engineers from [r/FastAPI](https://www.reddit.com/r/FastAPI/) whose sharp architectural peer reviews directly elevated the production engineering of this project:
+
+* [**u/pvnimaxin**](https://www.reddit.com/user/pvnimaxin/) — for calling out Python `SimpleCookie` octal escaping bloat (`\054`), guiding the `v2_` binary `zlib` + `base64url` compression design to compress 68 simultaneous missables well under the 4 KB browser limit, and advising on bounded decompression limits and `Cache-Control` / `Vary` cache-busting headers.
+* [**u/DismalCockroach1928**](https://www.reddit.com/user/DismalCockroach1928/) — for analyzing concurrent in-flight mutation edge cases (Read-Modify-Write / Lost Update on stateless cookies) and recommending HTMX `hx-sync="this:queue"` to strictly serialize mutation controls.
+
+---
+
 ## License
 
 Released under the [MIT License](LICENSE). 
