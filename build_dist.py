@@ -107,7 +107,7 @@ index_html = """<!DOCTYPE html>
   <link rel="stylesheet" href="/assets/app.css" />
   <script src="/assets/htmx.min.js"></script>
 </head>
-<body class="bg-zinc-950 text-zinc-100 min-h-screen w-full max-w-full overflow-x-hidden font-sans antialiased">
+<body hx-sync="this:queue" class="bg-zinc-950 text-zinc-100 min-h-screen w-full max-w-full overflow-x-hidden font-sans antialiased">
   <div class="max-w-7xl w-full mx-auto px-4 pt-6 pb-12 overflow-x-visible">
     <!-- Header -->
     <div class="flex flex-col md:flex-row md:items-center md:justify-between border-b border-zinc-800/90 pb-6 mb-7 gap-4">
