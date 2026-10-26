@@ -8,8 +8,8 @@
     <a href="https://github.com/mortalezz/er-roadmap/releases/latest"><strong>🍎 Download macOS App (1.5 MB, Offline)</strong></a>
     <br/>
     <img src="https://img.shields.io/badge/Catalog-1%2C241_Items-f59e0b?style=flat-square" alt="1,241 Items" />
-    <img src="https://img.shields.io/badge/Curated_Chains-82_Quest_Rules-10b981?style=flat-square" alt="82 Rules" />
-    <img src="https://img.shields.io/badge/Lockout_Protection-10_PONR_Gates-ef4444?style=flat-square" alt="10 Gates" />
+    <img src="https://img.shields.io/badge/Curated_Chains-82_Rules_(68_Missables_Protected)-10b981?style=flat-square" alt="68 Missables Protected" />
+    <img src="https://img.shields.io/badge/Lockout_Protection-10_Hard_Gates-ef4444?style=flat-square" alt="10 Hard Gates" />
     <img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="MIT License" />
   </p>
 </div>
@@ -19,32 +19,35 @@
 ## What is Elden Ring Roadmap?
 
 If you're starting a new game, an NG+ run, or prepping a new build for PvP/co-op, you probably have a mental wishlist:
-* *"I need the Magic Scorpion Charm, the Raging Wolf armor set, the Bolt of Gransax, and Dragonbolt of Florissax."*
+* *"I want the Magic Scorpion Charm, the Raging Wolf armor set, the Bolt of Gransax, and Dragonbolt of Florissax."*
 
-The problem? **Elden Ring's questlines are full of invisible tripwires.** 
+The problem? **Elden Ring's quests are full of invisible tripwires.** 
 * Rest at an Altus Plateau site of grace too early? *Alexander, Corhyn, and Yura's quests jump forward.*
-* Join Volcano Manor before doing Rya's errand in Liurnia? *Blackguard Boggart is locked out forever (no Boiled Crab for you).*
-* Loot the Secret Medallion at Castle Sol before talking to Latenna? *She dies where she sits.*
+* Join Volcano Manor before doing Rya's errand in Liurnia? *Blackguard Boggart is locked out forever (no Boiled Crab for your run).*
+* Loot the Secret Medallion at Castle Sol before recruiting Latenna? *She dies where she sits.*
 * Defeat Rykard? *Every Volcano Manor assassination contract vanishes.*
 * Cross north of Bonny Village in the DLC? *Miquella's Great Rune breaks, locking out Moore's and Thiollier's concoctions.*
 * Defeat Maliketh? *Leyndell turns to ash, burying the Bolt of Gransax and Sanctified Whetblade.*
 
-Traditional walkthroughs force you to read through hundreds of chronological steps for items you don't even want. 
+Knowing the major bosses isn't enough—most items lock out because of an **obscure prerequisite 3 regions earlier** that you didn't know was connected. Traditional 100-page walkthroughs force you to read through hundreds of chronological steps for items you don't even want.
 
 **Elden Ring Roadmap inverts the entire process:**
-You tell it **only what items you want for your build**, and it generates a **personalized, step-by-step geographical route** with explicit **Point-of-No-Return (PONR) stop barriers** so you never accidentally lock yourself out of a build-defining item again.
+You select **only the items you want for your build**, and the compiler cross-references **82 curated quest rules (covering all 68 permanently missable items)** against **10 hard Point-of-No-Return (PONR) gates** to deliver two ironclad guarantees:
+
+> 1. **You Won't Lose Anything:** Prerequisite steps are mathematically clamped *before* the downstream gates that would lock them out, placing bold red stop barriers on your checklist until it's safe to proceed.
+> 2. **Zero Needless Backtracking:** Multi-step NPC quests and static pickups are merged and interleaved into a single, natural geographical progression path. You sweep each region once.
 
 ---
 
 ## How It Works
 
 ```
- 1. Queue Your Wishlist        2. Smart Route Sequencing       3. Inline Stop Barriers
+ 1. Queue Your Wishlist        2. Multi-Quest Unrolling        3. Inline Stop Barriers
 ┌─────────────────────────┐   ┌─────────────────────────┐    ┌─────────────────────────┐
-│ 🎯 Magic Scorpion Charm │   │ 📍 Liurnia of Lakes     │    │ [!] POINT OF NO RETURN  │
-│ 🎯 Raging Wolf Set      │──►│ 📍 Altus Plateau        │──► │ Handing Fingerslayer    │
-│ 🎯 Bolt of Gransax      │   │ 📍 Leyndell Capital     │    │ Blade to Ranni kills    │
-│ 🎯 Florissax Dragonbolt │   │ 📍 Realm of Shadow      │    │ Seluvis. Complete charm │
+│ 🎯 Magic Scorpion Charm │   │ 📍 Liurnia: Rya Errand  │    │ [!] POINT OF NO RETURN  │
+│ 🎯 Raging Wolf Set      │──►│ 📍 Altus: Volcano Manor │──► │ Handing Fingerslayer    │
+│ 🎯 Bolt of Gransax      │   │ 📍 Leyndell: Vargram    │    │ Blade to Ranni kills    │
+│ 🎯 Florissax Dragonbolt │   │ 📍 Shadow: Black Syrup  │    │ Seluvis. Complete charm │
 └─────────────────────────┘   └─────────────────────────┘    │ errand BEFORE crossing! │
                                                              └─────────────────────────┘
 ```
@@ -52,23 +55,24 @@ You tell it **only what items you want for your build**, and it generates a **pe
 ### 1. Queue Only What You Care About
 Search from **1,241 weapons, talismans, spells, armor sets, spirit ashes, cookbooks, and upgrade materials** across both the Base Game and *Shadow of the Erdtree*. Add only the loot you want for this run.
 
-### 2. Zero-Backtracking Geographical Order
-The planner unrolls NPC quest prerequisites and merges shared tasks into single checkpoints. It schedules every pickup along natural game flow:
-> **Limgrave → Weeping Peninsula → Liurnia → Caelid → Underground → Altus → Mt. Gelmir → Leyndell → Mountaintops → Snowfield / Mohgwyn → Farum Azula → Realm of Shadow**
+### 2. 68 Curated Missables Unrolled Step-by-Step
+Every missable item in the game has its full prerequisite chain mapped out. 
+* Want the **Raging Wolf Set**? The compiler knows you must talk to Bernahl, do Rya's Liurnia errand, join Volcano Manor, finish Contracts 1 & 2, and invade Vargram in Leyndell *before* Rykard or Maliketh dies.
+* Want **Dragonbolt of Florissax**? The compiler knows you must talk to Thiollier and Moore *before* Miquella's Great Rune breaks, then administer the draught at Jagged Peak *before* fighting Bayle.
 
-You sweep each region once, pick up what you need, and move on.
+### 3. Backward Gate Clamping & Stop Barriers
+If Step 4 of a quest is locked out by a late-game boss, the compiler **propagates that ceiling backward**, scheduling Steps 1, 2, and 3 into the route *before* the point of no return:
+* **🔴 Red Barrier:** *"DO NOT TRIGGER YET — Handing the Fingerslayer Blade to Ranni will lock out Seluvis and the Magic Scorpion Charm."*
+* **🟢 Green Clear:** Once all prerequisites are checked off, the barrier turns green: *"SAFE TO CROSS POINT OF NO RETURN."*
 
-### 3. Hard Stop Barriers (Points of No Return)
-Whenever a quest is at risk of being locked out by a world event, the planner places an inline **Stop Barrier**:
-* **🔴 Red Alert:** *"DO NOT TRIGGER YET — Resting at Altus Plateau / Touching Ranni's Fingerslayer Blade will lock out this step."*
-* **🟢 Green Clear:** Once all prerequisite steps before that gate are checked off, the barrier turns green: *"SAFE TO CROSS."*
+### 4. Zero Backtracking (Geographical Region Spine)
+Static pickups, bosses, and quest errands in the same area are grouped together along natural game flow:
+> **Limgrave → Weeping Peninsula → Liurnia → Caelid → Underground (Siofra/Nokron) → Altus Plateau → Mt. Gelmir → Leyndell → Mountaintops → Snowfield / Mohgwyn → Farum Azula → Realm of Shadow**
 
-### 4. Build Conflict Detection
+When multiple queued items share a prerequisite (like Volcano Manor invitations or Moore's syrup), the compiler merges them into a **single checkpoint** with combined target badges so you never repeat work.
+
+### 5. Build Conflict Detection
 Certain rewards are strictly mutually exclusive in a single playthrough (e.g. *Millicent's Prosthesis* vs. *Rotten Winged Sword Insignia*, or *Nepheli Puppet* vs. *Dung Eater Puppet*). The planner immediately highlights collisions with a one-click button to resolve your choice.
-
-### 5. Laconic, Spoiler-Free Checkpoints
-No bloated lore paragraphs. Every checkpoint gives you only what you need to act:
-> `[Altus Plateau • Altus Highway Junction] Rest at Grace to trigger Corhyn movement. (GATE_B_ALTUS)`
 
 ---
 
@@ -78,8 +82,8 @@ Whether you play next to a dual monitor, a laptop, or your phone propped against
 
 ### 🌐 Live Web App (Fast & Mobile-Friendly)
 Open [**er-ngplus-compiler.fastapicloud.dev**](https://er-ngplus-compiler.fastapicloud.dev) in any browser.
-* **Instant Load:** Cached at Cloudflare's Edge CDN worldwide for sub-20ms first paint.
-* **Installable PWA:** Open in Safari on iPhone or Chrome on Android and tap **"Add to Home Screen"** for a full-screen, app-like experience with no browser address bar.
+* **Instant Load:** Static shell cached at Cloudflare's Edge CDN worldwide for sub-20ms first paint.
+* **Installable PWA:** Open in Safari on iOS or Chrome on Android and tap **"Add to Home Screen"** for a full-screen, standalone app experience with no browser address bar.
 * **No Accounts / No Passwords:** Your checklist is saved automatically in your browser.
 
 ### 🍎 Native macOS Desktop App (`1.5 MB`, 100% Offline)
@@ -90,32 +94,35 @@ Playing on a Mac or keeping a MacBook on your gaming desk? Grab the native deskt
 
 ### 💾 Seamless Multi-Device Sync (Tiny 1 KB File)
 Switching between your desktop and your phone mid-playthrough?
-1. Click **💾 Export JSON** on your computer (it downloads a tiny `~1 KB` file).
+1. Click **💾 Export JSON** on your computer (downloads a tiny `~1 KB` file).
 2. AirDrop, text, or email the file to your phone.
-3. Open the Web App on your phone, click **📂 Import JSON**, and pick the file.
+3. Open the Web App on your phone, click **📂 Import JSON**, and select the file.
 4. Your entire wishlist, checked steps, and progress are instantly restored.
 
 ---
 
-## Major Lockouts Protected
+## The 10 Major Lockout Gates Protected
 
-| Critical Trigger | What Locks Out If You Cross Too Early |
-| :--- | :--- |
-| **Resting at Altus Plateau** | *Raptor of the Mists* ash of war, *Rogier's Rapier +8*, early Corhyn/Alexander dialogue |
-| **Handing Fingerslayer Blade to Ranni** | *Magic Scorpion Charm*, *Dung Eater Puppet*, *Nepheli Loux Puppet*, *Spellblade Set* |
-| **Joining Volcano Manor Early** | Blackguard Boggart vendor (*Boiled Prawn / Boiled Crab*), *Hammer Talisman* |
-| **Defeating Rykard, Lord of Blasphemy** | *Raging Wolf Set*, *Bull-Goat Set*, *Magma Whip Candlestick*, *Taker's Cameo*, *Hoslow's Set*, *Crepus's Vial* |
-| **Looting Haligtree Secret Medallion (Left)** | Latenna's *Somber Ancient Dragon Smithing Stone* (if she wasn't recruited in Liurnia first) |
-| **Defeating Maliketh (Ashen Capital)** | *Bolt of Gransax*, *Sanctified Whetblade*, *Gravel Stone Seal*, *Coded Sword*, *Lionel's Set* |
-| **Approaching Shadow Keep (DLC Great Rune Breaks)** | Moore's *Black Syrup*, *Thiollier's Concoction*, *Dragonbolt of Florissax*, *Florissax Spirit Ash* |
-| **Opening Messmer's Chamber (DLC)** | *Lacerating Crossed-Tree*, *Ash of War: Swift Slash*, *Retaliatory Crossed-Tree*, *Hornsent Grandam* |
-| **Burning the Sealing Tree (DLC)** | *Falx* invasion, *St. Trina's Smile*, *Thiollier's Needle*, *Dryleaf Arts*, *Verdigris Greatshield* |
+Every quest step in our 82 rulesets is tied to one of these 10 hard world boundaries:
+
+| Gate ID | Lockout Trigger | Key Missables Protected |
+| :--- | :--- | :--- |
+| **`GATE_B_ALTUS`** | Resting at Altus Plateau / triggering Radahn Festival | *Raptor of the Mists* ash of war, *Rogier's Rapier +8*, early Corhyn/Alexander dialogue |
+| **`GATE_B_FINGERSLAYER`** | Handing Fingerslayer Blade to Ranni | *Magic Scorpion Charm*, *Dung Eater Puppet*, *Nepheli Loux Puppet*, *Spellblade Set* |
+| **`GATE_B_VOLCANO_MANOR`** | Joining Volcano Manor before Liurnia errand | Blackguard Boggart vendor (*Boiled Prawn / Boiled Crab*), *Hammer Talisman* |
+| **`GATE_B_RYKARD`** | Defeating Rykard, Lord of Blasphemy | *Raging Wolf Set*, *Bull-Goat Set*, *Magma Whip Candlestick*, *Taker's Cameo*, *Hoslow's Set*, *Crepus's Vial*, *Gelmir's Fury* |
+| **`GATE_B_CASTLE_SOL`** | Looting Haligtree Secret Medallion (Left) | Latenna's *Somber Ancient Dragon Smithing Stone* (kills Latenna if not recruited in Liurnia) |
+| **`GATE_B_MALIKETH`** | Defeating Maliketh (Leyndell → Ashen Capital) | *Bolt of Gransax*, *Sanctified Whetblade*, *Gravel Stone Seal*, *Coded Sword*, *Lionel's Set*, *Barrier of Gold*, *Black Bow* |
+| **`GATE_S_RUNEBREAK`** | Approaching Shadow Keep / crossing Bonny Village (DLC) | Moore's *Black Syrup*, *Thiollier's Concoction*, *Dragonbolt of Florissax*, *Florissax Spirit Ash* |
+| **`GATE_S_MESSMER`** | Opening Messmer's Dark Chamber (DLC) | *Lacerating Crossed-Tree*, *Ash of War: Swift Slash*, *Retaliatory Crossed-Tree*, *Hornsent Grandam* dialogue |
+| **`GATE_S_ROMINA`** | Burning the Sealing Tree after Romina (DLC) | *Falx* invasion, *St. Trina's Smile*, *Thiollier's Needle*, *Dryleaf Arts & Dane's Hat*, *Verdigris Greatshield* |
+| **`GATE_NONE`** | Open Regional Sweep | Boss drops, finite Ancient / Somber Ancient Dragon Smithing Stones (safe at any time) |
 
 ---
 
 ## Mutual Exclusivity Quick Reference
 
-These items cannot be obtained in the same NG cycle; queuing both will alert you:
+These items cannot be obtained in the same NG cycle; queuing both will alert you immediately:
 
 * **Millicent's Quest:** *Millicent's Prosthesis* (betray) **vs.** *Rotten Winged Sword Insignia & Miquella's Needle* (assist).
 * **Seluvis's Potion:** *Dung Eater Puppet* **vs.** *Nepheli Loux Puppet* **vs.** *2× Ancient Dragon Smithing Stones* (Nepheli/Gostoc).
@@ -124,6 +131,7 @@ These items cannot be obtained in the same NG cycle; queuing both will alert you
 * **Leda's Invasions:** *Lacerating Crossed-Tree* (side with Leda) **vs.** *Ash of War: Swift Slash* (side with Hornsent).
 * **Hornsent / Ansbach:** *Retaliatory Crossed-Tree* (side with Leda) **vs.** *Obsidian Lamina & Furious Blade* (keep Ansbach alive).
 * **Iris of Grace vs. Occultation:** *Sword of Night* **vs.** *Jolán Spirit Ash* (Jolán), and *Queelign's Greatsword* **vs.** *Queelign Spirit Ash*.
+* **Heart of Bayle:** *Bayle's Tyranny* **vs.** *Bayle's Flame Lightning* (1× Heart per cycle).
 
 ---
 
