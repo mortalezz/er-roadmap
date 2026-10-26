@@ -1,18 +1,23 @@
+import os
+import subprocess
 import base64
 import json
 import sqlite3
 import zlib
 from typing import Dict, Any, List, Tuple
 from fastapi import FastAPI, Request, Form, UploadFile, File
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
 from seed_db import DB_PATH, init_db
 from compiler import compile_run_plan
 
+DIST_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dist")
+if not os.path.exists(DIST_DIR):
+    build_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "build_dist.py")
+    subprocess.run(["python3", build_script], check=True)
+
 app = FastAPI(title="Elden Ring Current Run Roadmap")
-app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 NO_CACHE_HEADERS = {
@@ -139,30 +144,10 @@ def render_workspace(request: Request, order: List[Dict[str, Any]], steps: Dict[
     return resp
 
 
-@app.get("/favicon.ico", include_in_schema=False)
-async def favicon():
-    return FileResponse("static/favicon-32.png", media_type="image/png")
-
-
-@app.get("/apple-touch-icon.png", include_in_schema=False)
-@app.get("/apple-touch-icon-precomposed.png", include_in_schema=False)
-async def apple_touch_icon():
-    return FileResponse("static/apple-touch-icon.png", media_type="image/png")
-
-
-@app.get("/", response_class=HTMLResponse)
-async def index(request: Request):
+@app.get("/workspace", response_class=HTMLResponse)
+async def workspace_endpoint(request: Request):
     order, steps = load_session(request)
-    with get_conn() as conn:
-        state = compile_run_plan(conn, order, steps)
-    resp = templates.TemplateResponse(
-        request=request,
-        name="index.html",
-        context=state,
-        headers=NO_CACHE_HEADERS,
-    )
-    save_session(resp, order, steps)
-    return resp
+    return render_workspace(request, order, steps)
 
 
 @app.get("/export")
@@ -386,3 +371,7 @@ async def step_toggle(request: Request, step_key: str = Form(...)):
             item["is_collected"] = 1 if done_count == len(all_keys) else 0
 
     return render_workspace(request, order, steps)
+
+
+# Low-priority static frontend routes with Cloudflare Edge CDN caching
+app.frontend("/", directory=DIST_DIR)

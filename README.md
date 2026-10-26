@@ -147,7 +147,7 @@ In addition to the Python/FastAPI cloud web app, [`rust-port/`](rust-port/) cont
 ## Web App Tech Stack & Stateless Cookie Engineering
 
 - **Backend:** [FastAPI](https://fastapi.tiangolo.com/) ([`main.py`](main.py)) + Jinja2 server-rendered templates ([`templates/`](templates/)).
-- **Frontend:** [HTMX `1.9.12`](https://htmx.org/) + Tailwind CSS. Zero client-side JS framework; all mutations return server-rendered partial HTML with `HX-Trigger: refreshSearch` and `Vary: HX-Request, Cookie`.
+- **Frontend:** Static application shell (`dist/index.html`) cached at Cloudflare's Edge CDN via FastAPI's native `app.frontend()` with bundled `htmx.min.js` and precompiled standalone CSS (zero runtime Play CDN JIT delay). Dynamic workspace state is lazy-loaded via `GET /workspace` and updated via partial HTMX swaps (`templates/partials/workspace.html`) with `HX-Trigger: refreshSearch` and `Vary: HX-Request, Cookie`.
 - **Database (`ngplus.db`):** Bundled, strictly **read-only** SQLite 3 catalog with **FTS5** prefix typeahead search (`porter unicode61` tokenizer), prioritizing `[MISSABLE]` and curated multi-step chains. Zero `SQLITE_BUSY` write locks across ephemeral cloud workers.
 - **Stateless Multi-User Persistence:** User state (`er_order` and `er_steps`) lives in compact `httponly` cookies (30-day TTL) alongside one-click portable **💾 Export JSON** (`GET /export`) and **📂 Import JSON** (`POST /import`).
 
@@ -176,7 +176,10 @@ Requires Python 3.11+ and [`uv`](https://docs.astral.sh/uv/).
 # 1. Install dependencies
 uv sync
 
-# 2. Run the development server (http://127.0.0.1:8000)
+# 2. Build static frontend (generates dist/)
+python build_dist.py
+
+# 3. Run the development server (http://127.0.0.1:8000)
 uv run fastapi dev main.py
 
 # 3. Rebuild ngplus.db offline from curated rules + SOTE catalog

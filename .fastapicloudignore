@@ -1,0 +1,2 @@
+# Un-ignore frontend build directory for FastAPI Cloud
+!dist/
