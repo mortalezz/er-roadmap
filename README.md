@@ -41,15 +41,15 @@ You select **only the items you want for your build**, and the compiler cross-re
 
 ## How It Works
 
-```
-  1. Queue Your Wishlist        2. Multi-Quest Unrolling        3. Inline Stop Barriers
-┌─────────────────────────┐   ┌─────────────────────────┐   ┌─────────────────────────┐
-│ * Magic Scorpion Charm  │   │ 1. Liurnia: Rya Errand  │   │ [!] POINT OF NO RETURN  │
-│ * Raging Wolf Set       │──►│ 2. Altus: Volcano Manor │──►│ Handing Fingerslayer    │
-│ * Bolt of Gransax       │   │ 3. Leyndell: Vargram    │   │ Blade to Ranni kills    │
-│ * Florissax Dragonbolt  │   │ 4. Shadow: Black Syrup  │   │ Seluvis. Complete charm │
-│                         │   │                         │   │ errand BEFORE crossing! │
-└─────────────────────────┘   └─────────────────────────┘   └─────────────────────────┘
+```mermaid
+flowchart LR
+    A["<b>1. Queue Your Wishlist</b><br/><br/>• Magic Scorpion Charm<br/>• Raging Wolf Set<br/>• Bolt of Gransax<br/>• Florissax Dragonbolt"]
+    -->
+    B["<b>2. Multi-Quest Unrolling</b><br/><br/>1. Liurnia: Rya Errand<br/>2. Altus: Volcano Manor<br/>3. Leyndell: Vargram<br/>4. Shadow: Black Syrup"]
+    -->
+    C["<b>3. Inline Stop Barriers</b><br/><br/>⚠️ <b>POINT OF NO RETURN</b><br/>Handing Fingerslayer Blade kills Seluvis.<br/>Complete errand BEFORE crossing!"]
+
+    style C stroke:#ef4444,stroke-width:2px
 ```
 
 ### 1. Queue Only What You Care About
