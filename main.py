@@ -141,6 +141,13 @@ def save_session(response: HTMLResponse, order: List[Dict[str, Any]], steps: Dic
 def render_workspace(request: Request, order: List[Dict[str, Any]], steps: Dict[str, bool]) -> HTMLResponse:
     with get_conn() as conn:
         state = compile_run_plan(conn, order, steps)
+    export_payload = {
+        "app": "elden-ring-current-run-roadmap",
+        "version": 1,
+        "current_run_order": order,
+        "step_progress": [{"step_key": k, "is_done": 1 if v else 0} for k, v in steps.items() if v],
+    }
+    state["export_json_str"] = json.dumps(export_payload, indent=2)
     resp = templates.TemplateResponse(
         request=request,
         name="partials/workspace.html",
