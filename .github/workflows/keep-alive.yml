@@ -1,0 +1,15 @@
+name: Keep-Alive Uvicorn Worker
+
+on:
+  schedule:
+    # Run every 5 minutes to prevent FastAPI Cloud from scaling Uvicorn worker to zero
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping FastAPI Cloud Health Check
+        run: |
+          curl -fsS --retry 3 --connect-timeout 10 https://er-ngplus-compiler.fastapicloud.dev/api/health

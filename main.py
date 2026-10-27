@@ -6,26 +6,22 @@ import sqlite3
 import zlib
 from typing import Dict, Any, List, Tuple
 from fastapi import FastAPI, Request, Form, UploadFile, File
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from seed_db import DB_PATH, init_db
 from compiler import compile_run_plan
 
 DIST_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dist")
-if not os.path.exists(DIST_DIR):
-    build_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "build_dist.py")
-    subprocess.run(["python3", build_script], check=True)
+STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
 app = FastAPI(title="Elden Ring Current Run Roadmap")
 templates = Jinja2Templates(directory="templates")
 
-INDEX_HTML_PATH = os.path.join(DIST_DIR, "index.html")
-
-EDGE_CACHE_HEADERS = {
-    "Cache-Control": "public, max-age=0, must-revalidate, s-maxage=3600, stale-while-revalidate=86400",
-    "Vary": "Accept-Encoding",
-}
+# Mount static files directly (icons, manifest, scripts)
+if os.path.exists(STATIC_DIR):
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 NO_CACHE_HEADERS = {
     "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
@@ -140,6 +136,7 @@ def save_session(response: HTMLResponse, order: List[Dict[str, Any]], steps: Dic
 
 
 def render_workspace(request: Request, order: List[Dict[str, Any]], steps: Dict[str, bool]) -> HTMLResponse:
+    """Renders the dynamic workspace partial for interactive HTMX swaps."""
     with get_conn() as conn:
         state = compile_run_plan(conn, order, steps)
     export_payload = {
@@ -161,20 +158,46 @@ def render_workspace(request: Request, order: List[Dict[str, Any]], steps: Dict[
 
 @app.get("/api/health")
 async def health_check():
-    """Lightweight zero-allocation keep-warm and healthcheck endpoint."""
+    """Zero-allocation keep-warm and healthcheck endpoint for Uvicorn uptime."""
     return {"status": "ok"}
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return FileResponse(os.path.join(STATIC_DIR, "favicon-32.png"))
+
+
+@app.get("/apple-touch-icon.png", include_in_schema=False)
+@app.get("/apple-touch-icon-precomposed.png", include_in_schema=False)
+async def apple_touch_icon():
+    return FileResponse(os.path.join(STATIC_DIR, "apple-touch-icon.png"))
 
 
 @app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
 @app.api_route("/index.html", methods=["GET", "HEAD"], response_class=HTMLResponse)
-async def root_shell():
-    """Serves the static application shell cached at Cloudflare's Edge CDN for instant first paint."""
-    if not os.path.exists(INDEX_HTML_PATH):
-        build_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "build_dist.py")
-        subprocess.run(["python3", build_script], check=True)
-    with open(INDEX_HTML_PATH, "r", encoding="utf-8") as f:
-        content = f.read()
-    return HTMLResponse(content=content, headers=NO_CACHE_HEADERS)
+async def root_page(request: Request):
+    """
+    Renders the complete, fully-populated roadmap page in a single server-side render pass.
+    Eliminates cold-start skeletons, artificial edge-cache splits, and bottom-part render delays.
+    """
+    order, steps = load_session(request)
+    with get_conn() as conn:
+        state = compile_run_plan(conn, order, steps)
+    export_payload = {
+        "app": "elden-ring-current-run-roadmap",
+        "version": 1,
+        "current_run_order": order,
+        "step_progress": [{"step_key": k, "is_done": 1 if v else 0} for k, v in steps.items() if v],
+    }
+    state["export_json_str"] = json.dumps(export_payload, indent=2)
+    resp = templates.TemplateResponse(
+        request=request,
+        name="index.html",
+        context=state,
+        headers=NO_CACHE_HEADERS,
+    )
+    save_session(resp, order, steps)
+    return resp
 
 
 @app.get("/workspace", response_class=HTMLResponse)
@@ -186,8 +209,8 @@ async def workspace_endpoint(request: Request):
 @app.get("/export")
 async def export_roadmap(request: Request):
     accept = request.headers.get("accept", "")
-    # If accessed directly via browser navigation (e.g. from an old cached PWA link or direct URL),
-    # redirect to /?export=1 so iOS PWA never opens the dead-end QuickLook document viewer.
+    # If accessed directly via browser navigation (e.g. from an old cached PWA link),
+    # redirect to / to load the fresh application shell.
     if "text/html" in accept and "application/json" not in accept:
         return RedirectResponse(url="/", status_code=302, headers=NO_CACHE_HEADERS)
 
@@ -321,7 +344,7 @@ async def search_items(request: Request, q: str = ""):
                 </div>
                 <div class="text-xs text-zinc-400 break-words">{r["campaign"]} • {r["category"]} • {r["region"]}</div>
               </div>
-              <div class="flex items-center gap-1.5 shrink-0">
+              <div class="flex items-center gap-1.5 shrink-0 min-w-fit">
                 {action_form}
               </div>
             </div>
@@ -414,7 +437,3 @@ async def step_toggle(request: Request, step_key: str = Form(...)):
             item["is_collected"] = 1 if done_count == len(all_keys) else 0
 
     return render_workspace(request, order, steps)
-
-
-# Low-priority static frontend routes with Cloudflare Edge CDN caching
-app.frontend("/", directory=DIST_DIR)
