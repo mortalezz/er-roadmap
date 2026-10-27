@@ -251,3 +251,62 @@ pub fn export_json(order: &[OrderEntry], steps: &HashMap<String, bool>) -> Strin
     buf.push_str("]}");
     buf
 }
+
+pub fn parse_imported_json(raw: &str) -> (Vec<OrderEntry>, HashMap<String, bool>) {
+    let mut order = Vec::new();
+    let mut seen = HashSet::new();
+    let mut steps = HashMap::new();
+
+    if let Some(order_idx) = raw.find("\"current_run_order\"") {
+        let after = &raw[order_idx..];
+        let end_idx = after.find("]").unwrap_or(after.len());
+        let block = &after[..end_idx];
+        for obj in block.split("{").skip(1) {
+            if let Some(id_pos) = obj.find("\"item_id\"") {
+                let rest = &obj[id_pos + 9..];
+                if let Some(q1) = rest.find('"') {
+                    let rest2 = &rest[q1 + 1..];
+                    if let Some(q2) = rest2.find('"') {
+                        let item_id = &rest2[..q2];
+                        let is_col = obj.contains("\"is_collected\":1")
+                            || obj.contains("\"is_collected\": 1")
+                            || obj.contains("\"is_collected\":true")
+                            || obj.contains("\"is_collected\": true");
+                        if !item_id.is_empty() && seen.insert(item_id.to_string()) {
+                            order.push(OrderEntry {
+                                item_id: item_id.to_string(),
+                                is_collected: is_col,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(steps_idx) = raw.find("\"step_progress\"") {
+        let after = &raw[steps_idx..];
+        let end_idx = after.find("]").unwrap_or(after.len());
+        let block = &after[..end_idx];
+        for obj in block.split("{").skip(1) {
+            if let Some(sk_pos) = obj.find("\"step_key\"") {
+                let rest = &obj[sk_pos + 10..];
+                if let Some(q1) = rest.find('"') {
+                    let rest2 = &rest[q1 + 1..];
+                    if let Some(q2) = rest2.find('"') {
+                        let s_key = &rest2[..q2];
+                        let is_done = obj.contains("\"is_done\":1")
+                            || obj.contains("\"is_done\": 1")
+                            || obj.contains("\"is_done\":true")
+                            || obj.contains("\"is_done\": true");
+                        if !s_key.is_empty() && is_done {
+                            steps.insert(s_key.to_string(), true);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    (order, steps)
+}
