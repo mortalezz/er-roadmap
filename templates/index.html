@@ -50,12 +50,13 @@
 
       <!-- Export / Import / Reset Controls -->
       <div class="flex flex-wrap items-center gap-2.5">
-        <a
-          href="/export"
-          class="rounded-lg border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 active:scale-[0.98] px-3.5 py-2 text-xs font-semibold text-amber-300 transition flex items-center gap-1.5"
+        <button
+          type="button"
+          onclick="openExportModal()"
+          class="rounded-lg border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 active:scale-[0.98] px-3.5 py-2 text-xs font-semibold text-amber-300 transition flex items-center gap-1.5 cursor-pointer"
         >
           💾 Export JSON
-        </a>
+        </button>
 
         <form
           hx-post="/import"
@@ -79,7 +80,7 @@
         <form hx-post="/order/clear" hx-target="#workspace" hx-swap="innerHTML" class="inline">
           <button
             type="submit"
-            class="rounded-lg border border-red-900/60 bg-red-950/40 hover:bg-red-900/60 active:scale-[0.98] px-3.5 py-2 text-xs font-semibold text-red-300 transition"
+            class="rounded-lg border border-red-900/60 bg-red-950/40 hover:bg-red-900/60 active:scale-[0.98] px-3.5 py-2 text-xs font-semibold text-red-300 transition cursor-pointer"
           >
             Reset Slate
           </button>
@@ -115,6 +116,139 @@
     </div>
   </div>
 
+  <!-- Export JSON Modal Overlay -->
+  <div
+    id="export-modal"
+    class="fixed inset-0 z-50 hidden items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto"
+    onclick="handleExportModalBackdrop(event)"
+  >
+    <div
+      class="relative w-full max-w-lg rounded-2xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl text-zinc-100"
+      onclick="event.stopPropagation()"
+    >
+      <!-- Modal Header -->
+      <div class="flex items-start justify-between gap-4 pb-4 border-b border-zinc-800">
+        <div class="flex items-center gap-3">
+          <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 text-lg">
+            💾
+          </div>
+          <div>
+            <h3 class="text-lg font-bold text-amber-400">Export Roadmap</h3>
+            <p class="text-xs text-zinc-400">Save, share, or backup your run order and progress</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onclick="closeExportModal()"
+          class="rounded-lg p-1.5 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition cursor-pointer"
+          aria-label="Close modal"
+        >
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Modal Body / Export Options -->
+      <div class="py-5 space-y-3">
+        <!-- Option 1: Mobile Share / Save to Files (Native Share Sheet) -->
+        <button
+          id="export-share-btn"
+          type="button"
+          onclick="exportViaShare()"
+          class="w-full flex items-center justify-between rounded-xl border border-amber-500/40 bg-amber-950/20 hover:bg-amber-900/30 active:scale-[0.99] p-3.5 text-left transition group cursor-pointer"
+        >
+          <div class="flex items-center gap-3">
+            <span class="text-2xl">📱</span>
+            <div>
+              <div class="text-sm font-semibold text-amber-300 group-hover:text-amber-200">
+                Share / Save to Files
+              </div>
+              <div class="text-xs text-zinc-400">
+                Save to iPhone Files, AirDrop, or send to apps
+              </div>
+            </div>
+          </div>
+          <svg class="w-5 h-5 text-amber-400/70 group-hover:text-amber-300 transition shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+
+        <!-- Option 2: Download File -->
+        <button
+          type="button"
+          onclick="exportViaDownload()"
+          class="w-full flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/70 hover:bg-zinc-800 active:scale-[0.99] p-3.5 text-left transition group cursor-pointer"
+        >
+          <div class="flex items-center gap-3">
+            <span class="text-2xl">💾</span>
+            <div>
+              <div class="text-sm font-semibold text-zinc-200 group-hover:text-white">
+                Download .json File
+              </div>
+              <div class="text-xs text-zinc-400">
+                Direct browser download (<code class="text-zinc-300">elden-ring-roadmap.json</code>)
+              </div>
+            </div>
+          </div>
+          <svg class="w-5 h-5 text-zinc-500 group-hover:text-zinc-300 transition shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+        </button>
+
+        <!-- Option 3: Copy JSON to Clipboard -->
+        <button
+          id="export-copy-btn"
+          type="button"
+          onclick="exportViaClipboard()"
+          class="w-full flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/70 hover:bg-zinc-800 active:scale-[0.99] p-3.5 text-left transition group cursor-pointer"
+        >
+          <div class="flex items-center gap-3">
+            <span id="export-copy-icon" class="text-2xl">📋</span>
+            <div>
+              <div id="export-copy-label" class="text-sm font-semibold text-zinc-200 group-hover:text-white">
+                Copy JSON to Clipboard
+              </div>
+              <div id="export-copy-sub" class="text-xs text-zinc-400">
+                Instant clipboard copy for Notes, Bear, or text backup
+              </div>
+            </div>
+          </div>
+          <svg class="w-5 h-5 text-zinc-500 group-hover:text-zinc-300 transition shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+          </svg>
+        </button>
+
+        <!-- Collapsible JSON Preview -->
+        <details class="pt-2 text-xs text-zinc-400">
+          <summary class="cursor-pointer font-medium text-zinc-400 hover:text-amber-400 transition select-none">
+            Preview Raw JSON Data
+          </summary>
+          <div class="mt-2.5">
+            <textarea
+              id="export-preview-textarea"
+              readonly
+              rows="6"
+              class="w-full rounded-lg border border-zinc-800 bg-zinc-950 p-2.5 font-mono text-[11px] text-zinc-300 focus:outline-none select-all"
+              placeholder="Loading roadmap data..."
+            ></textarea>
+          </div>
+        </details>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="flex items-center justify-end gap-2.5 pt-4 border-t border-zinc-800">
+        <button
+          type="button"
+          onclick="closeExportModal()"
+          class="rounded-lg border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 active:scale-[0.98] px-4 py-2 text-xs font-semibold text-zinc-300 hover:text-white transition cursor-pointer"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+
   <script>
     function closeSearchDropdown(clearInput = true) {
       const results = document.getElementById("order-search-results");
@@ -135,12 +269,152 @@
       }
     });
 
-    // Auto-close search dropdown on Escape key
+    // Auto-close search dropdown & export modal on Escape key
     document.addEventListener("keydown", function (e) {
       if (e.key === "Escape") {
         closeSearchDropdown(false);
+        closeExportModal();
       }
     });
+
+    // --- Export JSON Modal & Handlers ---
+    let cachedExportJson = null;
+
+    async function getExportPayload() {
+      const resp = await fetch("/export", { headers: { "Accept": "application/json" } });
+      if (!resp.ok) throw new Error("Failed to export roadmap session");
+      const data = await resp.json();
+      return JSON.stringify(data, null, 2);
+    }
+
+    async function openExportModal() {
+      const modal = document.getElementById("export-modal");
+      const preview = document.getElementById("export-preview-textarea");
+      const shareBtn = document.getElementById("export-share-btn");
+
+      if (!modal) return;
+      modal.classList.remove("hidden");
+      modal.classList.add("flex");
+      document.body.classList.add("overflow-hidden");
+
+      const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
+      if (shareBtn) {
+        shareBtn.style.display = canShare ? "flex" : "none";
+      }
+
+      try {
+        if (preview) preview.value = "Fetching roadmap JSON...";
+        cachedExportJson = await getExportPayload();
+        if (preview) preview.value = cachedExportJson;
+      } catch (err) {
+        if (preview) preview.value = "Error fetching export data: " + err.message;
+      }
+    }
+
+    function closeExportModal() {
+      const modal = document.getElementById("export-modal");
+      if (!modal) return;
+      modal.classList.add("hidden");
+      modal.classList.remove("flex");
+      document.body.classList.remove("overflow-hidden");
+    }
+
+    function handleExportModalBackdrop(event) {
+      if (event.target.id === "export-modal") {
+        closeExportModal();
+      }
+    }
+
+    async function exportViaShare() {
+      try {
+        const jsonStr = cachedExportJson || (await getExportPayload());
+        let fileToShare = null;
+        try {
+          fileToShare = new File([jsonStr], "elden-ring-roadmap.json", { type: "application/json" });
+        } catch (_) {
+          fileToShare = null;
+        }
+
+        if (navigator.canShare && fileToShare && navigator.canShare({ files: [fileToShare] })) {
+          await navigator.share({
+            files: [fileToShare],
+            title: "Elden Ring Roadmap",
+          });
+          closeExportModal();
+        } else if (navigator.share) {
+          await navigator.share({
+            title: "Elden Ring Roadmap",
+            text: jsonStr,
+          });
+          closeExportModal();
+        } else {
+          exportViaDownload();
+        }
+      } catch (err) {
+        // If user dismissed/cancelled the share sheet (AbortError), stay on page peacefully
+        if (err.name !== "AbortError") {
+          console.warn("Share failed:", err);
+          exportViaDownload();
+        }
+      }
+    }
+
+    async function exportViaDownload() {
+      try {
+        const jsonStr = cachedExportJson || (await getExportPayload());
+        const blob = new Blob([jsonStr], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "elden-ring-roadmap.json";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        closeExportModal();
+      } catch (err) {
+        alert("Download failed: " + err.message);
+      }
+    }
+
+    async function exportViaClipboard() {
+      try {
+        const jsonStr = cachedExportJson || (await getExportPayload());
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(jsonStr);
+        } else {
+          const preview = document.getElementById("export-preview-textarea");
+          if (preview) {
+            preview.select();
+            document.execCommand("copy");
+          }
+        }
+
+        const label = document.getElementById("export-copy-label");
+        const sub = document.getElementById("export-copy-sub");
+        const icon = document.getElementById("export-copy-icon");
+
+        if (label && sub && icon) {
+          const origLabel = label.innerText;
+          const origSub = sub.innerText;
+          const origIcon = icon.innerText;
+
+          label.innerText = "Copied to Clipboard!";
+          label.className = "text-sm font-semibold text-emerald-400";
+          sub.innerText = "JSON copied — paste anywhere";
+          icon.innerText = "✅";
+
+          setTimeout(() => {
+            label.innerText = origLabel;
+            label.className = "text-sm font-semibold text-zinc-200 group-hover:text-white";
+            sub.innerText = origSub;
+            icon.innerText = origIcon;
+          }, 2500);
+        }
+      } catch (err) {
+        alert("Could not copy to clipboard: " + err.message);
+      }
+    }
   </script>
 </body>
 </html>
