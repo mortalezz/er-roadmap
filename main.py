@@ -20,6 +20,13 @@ if not os.path.exists(DIST_DIR):
 app = FastAPI(title="Elden Ring Current Run Roadmap")
 templates = Jinja2Templates(directory="templates")
 
+INDEX_HTML_PATH = os.path.join(DIST_DIR, "index.html")
+
+EDGE_CACHE_HEADERS = {
+    "Cache-Control": "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400",
+    "Vary": "Accept-Encoding",
+}
+
 NO_CACHE_HEADERS = {
     "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
     "Pragma": "no-cache",
@@ -142,6 +149,24 @@ def render_workspace(request: Request, order: List[Dict[str, Any]], steps: Dict[
     )
     save_session(resp, order, steps)
     return resp
+
+
+@app.get("/api/health")
+async def health_check():
+    """Lightweight zero-allocation keep-warm and healthcheck endpoint."""
+    return {"status": "ok"}
+
+
+@app.get("/", response_class=HTMLResponse)
+@app.get("/index.html", response_class=HTMLResponse)
+async def root_shell():
+    """Serves the static application shell cached at Cloudflare's Edge CDN for instant first paint."""
+    if not os.path.exists(INDEX_HTML_PATH):
+        build_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "build_dist.py")
+        subprocess.run(["python3", build_script], check=True)
+    with open(INDEX_HTML_PATH, "r", encoding="utf-8") as f:
+        content = f.read()
+    return HTMLResponse(content=content, headers=EDGE_CACHE_HEADERS)
 
 
 @app.get("/workspace", response_class=HTMLResponse)
