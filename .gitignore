@@ -29,5 +29,6 @@ skills/
 # Rust port build artifacts & local experiments
 rust-port/target/
 rust-port/ER Roadmap.app/
-rust-gpu/
+rust-gpu/target/
+rust-gpu/ER Roadmap GPU.app/
 *.zip

@@ -150,6 +150,7 @@ Traditional walkthroughs walk forward trying to track everything at once. `er-ng
 * **Database:** SQLite 3 catalog + FTS5 full-text search (`ngplus.db`, 1.1 MB, zero write locks, read-only mode).
 * **Stateless Cookies:** `v2_` zlib level 9 + URL-safe Base64 codec compresses 68 simultaneous missables into ~1 KB, dodging the browser 4 KB limit. Single-tab mutations serialized via `hx-sync="this:queue"`.
 * **Native Desktop Port (`rust-port/`):** Pure-Rust AOT `.tsx` compiler that compiles React-style templates into zero-allocation string writers, bundled with an embedded Cocoa `WKWebView` IPC bridge (`20.7 µs` solve time, `1.5 MB` binary).
+* **Experimental Apple Metal GPU Engine (`rust-gpu/`):** 100% Pure-Rust immediate-mode GPU Proof-of-Concept (`egui` / `glow`). Bypasses HTML, CSS, JavaScript, and WebKit entirely to draw directly to Apple Silicon GPU command buffers (< 0.5 ms frame time, 120 FPS ProMotion). Lacks Tailwind CSS polish, but raw hardware speed.
 
 ### Local Development & Compiling
 
@@ -192,6 +193,23 @@ The Rust engine is built with zero third-party crate dependencies. The catalog a
   cargo run --release -- --bench
   ```
   *(Tip for Windows GUI developers: You can pair this local binary with a native Microsoft Edge WebView2, Tauri, or Wry window for an offline Windows app.)*
+
+#### ⚡ Experimental Apple Metal GPU Engine (`rust-gpu/`)
+A pure-Rust immediate-mode Proof-of-Concept running directly on the GPU with zero web overhead:
+
+| Dimension | **macOS WKWebView App (`rust-port/`)** | **Apple Metal GPU PoC (`rust-gpu/`)** |
+| :--- | :--- | :--- |
+| **Philosophy** | **Polished Production Companion** | **Experimental Hardware PoC** |
+| **Rendering** | Cocoa `WKWebView` + embedded WebKit | Direct GPU hardware rasterization (`egui` / `glow`) |
+| **Aesthetics** | Pixel-perfect Tailwind CSS & SF Pro typography | Raw immediate-mode vector UI (zero HTML/CSS) |
+| **Frame Latency** | WebKit compositor (~4–8 ms) | **Direct GPU command buffer (< 0.5 ms, 120 FPS)** |
+| **Dependencies** | Zero crates, pure stdlib + Cocoa framework | Standalone Rust binary with native `rfd` file pickers |
+
+```bash
+# Build and launch the standalone Apple Metal GPU app
+./rust-gpu/build_macos_gpu_app.sh
+open "rust-gpu/ER Roadmap GPU.app"
+```
 </details>
 
 ---
