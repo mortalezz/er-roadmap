@@ -157,8 +157,8 @@ async def health_check():
     return {"status": "ok"}
 
 
-@app.get("/", response_class=HTMLResponse)
-@app.get("/index.html", response_class=HTMLResponse)
+@app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
+@app.api_route("/index.html", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def root_shell():
     """Serves the static application shell cached at Cloudflare's Edge CDN for instant first paint."""
     if not os.path.exists(INDEX_HTML_PATH):
