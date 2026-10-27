@@ -390,6 +390,10 @@ async def step_toggle(request: Request, step_key: str = Form(...)):
                 for s in st:
                     if s["seq"] < target_seq:
                         steps[s["step_key"]] = True
+            else:
+                for s in st:
+                    if s["seq"] > target_seq:
+                        steps[s["step_key"]] = False
 
             all_keys = [s["step_key"] for s in st]
             done_count = sum(1 for k in all_keys if steps.get(k))

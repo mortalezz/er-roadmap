@@ -476,6 +476,12 @@ pub fn toggle_step_key(
                                 steps.insert(s.step_key.to_string(), true);
                             }
                         }
+                    } else {
+                        for s in cat.steps {
+                            if s.seq > target_seq {
+                                steps.insert(s.step_key.to_string(), false);
+                            }
+                        }
                     }
                     let all_done = cat
                         .steps
@@ -782,5 +788,45 @@ pub fn compile_run_plan(
         done_steps,
         conflicts,
         epochs: compiled_epochs,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_florissax_toggle_cascade() {
+        let mut order = vec![OrderEntry {
+            item_id: "dragonbolt_of_florissax".to_string(),
+            is_collected: false,
+        }];
+        let mut steps = HashMap::new();
+
+        // 1. Checking step 1 should only check step 1
+        toggle_step_key(&mut order, &mut steps, "moore_thiollier_concoction");
+        assert_eq!(*steps.get("moore_thiollier_concoction").unwrap_or(&false), true);
+        assert_eq!(*steps.get("florissax_sleep_potion").unwrap_or(&false), false);
+        assert_eq!(order[0].is_collected, false);
+
+        // 2. Checking step 2 should ensure step 1 is checked and mark item collected
+        toggle_step_key(&mut order, &mut steps, "florissax_sleep_potion");
+        assert_eq!(*steps.get("moore_thiollier_concoction").unwrap_or(&false), true);
+        assert_eq!(*steps.get("florissax_sleep_potion").unwrap_or(&false), true);
+        assert_eq!(order[0].is_collected, true);
+
+        // 3. Unchecking step 2 should uncheck step 2, keep step 1, uncollect item
+        toggle_step_key(&mut order, &mut steps, "florissax_sleep_potion");
+        assert_eq!(*steps.get("moore_thiollier_concoction").unwrap_or(&false), true);
+        assert_eq!(*steps.get("florissax_sleep_potion").unwrap_or(&false), false);
+        assert_eq!(order[0].is_collected, false);
+
+        // 4. Re-check step 2, then uncheck step 1 -> both should become unchecked!
+        toggle_step_key(&mut order, &mut steps, "florissax_sleep_potion");
+        assert_eq!(*steps.get("florissax_sleep_potion").unwrap_or(&false), true);
+        toggle_step_key(&mut order, &mut steps, "moore_thiollier_concoction");
+        assert_eq!(*steps.get("moore_thiollier_concoction").unwrap_or(&false), false);
+        assert_eq!(*steps.get("florissax_sleep_potion").unwrap_or(&false), false);
+        assert_eq!(order[0].is_collected, false);
     }
 }
