@@ -6,7 +6,7 @@ import sqlite3
 import zlib
 from typing import Dict, Any, List, Tuple
 from fastapi import FastAPI, Request, Form, UploadFile, File
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from seed_db import DB_PATH, init_db
@@ -23,7 +23,7 @@ templates = Jinja2Templates(directory="templates")
 INDEX_HTML_PATH = os.path.join(DIST_DIR, "index.html")
 
 EDGE_CACHE_HEADERS = {
-    "Cache-Control": "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400",
+    "Cache-Control": "public, max-age=0, must-revalidate, s-maxage=3600, stale-while-revalidate=86400",
     "Vary": "Accept-Encoding",
 }
 
@@ -177,6 +177,12 @@ async def workspace_endpoint(request: Request):
 
 @app.get("/export")
 async def export_roadmap(request: Request):
+    accept = request.headers.get("accept", "")
+    # If accessed directly via browser navigation (e.g. from an old cached PWA link or direct URL),
+    # redirect to /?export=1 so iOS PWA never opens the dead-end QuickLook document viewer.
+    if "text/html" in accept and "application/json" not in accept:
+        return RedirectResponse(url="/?export=1", status_code=302, headers=NO_CACHE_HEADERS)
+
     order, steps = load_session(request)
     payload = {
         "app": "elden-ring-current-run-roadmap",

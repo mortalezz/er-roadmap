@@ -570,6 +570,14 @@ index_html = """<!DOCTYPE html>
         alert("Could not copy to clipboard: " + err.message);
       }
     }
+
+    // Auto-open export modal if redirected with ?export=1 (e.g. from direct /export link or old cached link)
+    if (window.location.search.includes("export=1")) {
+      try {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } catch (_) {}
+      setTimeout(openExportModal, 200);
+    }
   </script>
 </body>
 </html>
