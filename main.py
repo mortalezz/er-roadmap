@@ -30,6 +30,7 @@ EDGE_CACHE_HEADERS = {
 NO_CACHE_HEADERS = {
     "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
     "Pragma": "no-cache",
+    "Clear-Site-Data": '"cache"',
     "Vary": "HX-Request, Cookie",
 }
 
@@ -173,7 +174,7 @@ async def root_shell():
         subprocess.run(["python3", build_script], check=True)
     with open(INDEX_HTML_PATH, "r", encoding="utf-8") as f:
         content = f.read()
-    return HTMLResponse(content=content, headers=EDGE_CACHE_HEADERS)
+    return HTMLResponse(content=content, headers=NO_CACHE_HEADERS)
 
 
 @app.get("/workspace", response_class=HTMLResponse)
@@ -188,7 +189,7 @@ async def export_roadmap(request: Request):
     # If accessed directly via browser navigation (e.g. from an old cached PWA link or direct URL),
     # redirect to /?export=1 so iOS PWA never opens the dead-end QuickLook document viewer.
     if "text/html" in accept and "application/json" not in accept:
-        return RedirectResponse(url="/?export=1", status_code=302, headers=NO_CACHE_HEADERS)
+        return RedirectResponse(url="/", status_code=302, headers=NO_CACHE_HEADERS)
 
     order, steps = load_session(request)
     payload = {
