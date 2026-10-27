@@ -20,9 +20,11 @@ export function IndexPage(plan: RunPlan) {
         <div className="max-w-7xl w-full mx-auto px-4 pt-6 pb-12 overflow-x-visible">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between border-b border-zinc-800/90 pb-6 mb-7 gap-4">
             <div className="flex items-center gap-3.5">
-              <div className="h-11 w-11 rounded-xl border border-amber-500/40 shadow-[0_0_15px_rgba(245,158,11,0.18)] shrink-0 overflow-hidden bg-zinc-950">
-                {raw: crate::INLINE_EMBLEM_SVG}
-              </div>
+              <img
+                src="{raw: crate::OFFLINE_EMBLEM_DATA_URI}"
+                alt="ER Roadmap Emblem"
+                className="h-11 w-11 rounded-xl border border-amber-500/40 shadow-[0_0_15px_rgba(245,158,11,0.18)] shrink-0"
+              />
               <div>
                 <div className="flex items-center gap-2">
                   <h1 className="text-2xl font-bold tracking-tight text-amber-400">

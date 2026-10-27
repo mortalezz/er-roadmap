@@ -4,7 +4,7 @@ mod models;
 mod offline_assets;
 mod session;
 
-pub use offline_assets::{INLINE_EMBLEM_SVG, OFFLINE_RUNTIME_JS, OFFLINE_STYLESHEET};
+pub use offline_assets::{INLINE_EMBLEM_SVG, OFFLINE_EMBLEM_DATA_URI, OFFLINE_RUNTIME_JS, OFFLINE_STYLESHEET};
 
 pub mod views {
     include!(concat!(env!("OUT_DIR"), "/generated_views.rs"));
